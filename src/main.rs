@@ -1,14 +1,17 @@
-use reqwest::Client;
-use tokio::main;
+use reqwest::{
+    header::{ACCEPT, CONTENT_TYPE},
+    Response,
+};
+use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
     //let args: Vec<String> = env::args().collect();
-    let netto = Vendor {
+    let netto = Dealer {
         id: "9ba51".to_string(),
         name: "Netto".to_string(),
     };
-    println!("{} has id: {}", netto.name, netto.id);
+    println!("{:?}", netto);
     println!(
         "{:?}",
         retrieve_catalog(&netto)
@@ -30,34 +33,42 @@ struct Offer {
     end_date: String,
 }
 
-struct Vendor {
+#[derive(Debug)]
+struct Dealer {
     id: String,
     name: String,
 }
 
-async fn retrieve_catalog(vendor: &Vendor) -> Option<Vec<Offer>> {
+#[derive(Serialize, Deserialize, Debug)]
+struct Catalog {
+    id: String,
+    run_from: String,
+    run_till: String,
+    dealer_id: String,
+    offer_count: u32,
+}
+
+async fn retrieve_catalog(dealer: &Dealer) -> Option<Vec<Offer>> {
     let client = reqwest::Client::new();
-    let request = client
+    let catalog_response = client
         .get("https://squid-api.tjek.com/v2/catalogs")
-        .query(&[
-            ("dealer_ids", vendor.id.as_str()),
-            ("order_by", "created"),
-            ("limit", "6"),
-        ]);
-    println!("{:?}", request);
-    let response = request.send().await.unwrap();
+        .header(CONTENT_TYPE, "application/json")
+        .header(ACCEPT, "application/json")
+        .query(&[("dealer_ids", dealer.id.as_str())])
+        .send()
+        .await
+        .unwrap();
 
-    match response.status() {
-        reqwest::StatusCode::OK => {
-            let response_text = response.text().await;
-            println!("success! {:?}", response_text);
-
-            // let json_text = response_text.unwrap();
-        }
-        _ => {
-            panic!("didn't get a valid response, perhaps there is no connection?")
-        }
-    }
+    let catalogs = match catalog_response.status() {
+        reqwest::StatusCode::OK => match catalog_response.json::<Vec<Catalog>>().await {
+            Ok(parsed) => {
+                println!("success!\n{:?}", parsed);
+                parsed
+            }
+            Err(_) => panic!("Tried parsing JSON that wasn't a Catalog"),
+        },
+        _ => panic!("didn't get a valid response, perhaps there is no connection?"),
+    };
     let temp_offer = Offer {
         id: "test".to_string(),
         price: 12345,
