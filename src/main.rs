@@ -1,15 +1,13 @@
-use reqwest::{
-    header::{ACCEPT, CONTENT_TYPE},
-    Response,
-};
+use std::collections::HashMap;
+
+use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
-    //let args: Vec<String> = env::args().collect();
     let netto = Dealer {
-        id: "9ba51".to_string(),
-        name: "Netto".to_string(),
+        id: "9ba51".to_owned(),
+        name: "Netto".to_owned(),
     };
     println!("{:?}", netto);
     println!(
@@ -33,7 +31,7 @@ struct Offer {
     end_date: String,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Dealer {
     id: String,
     name: String,
@@ -65,10 +63,28 @@ async fn retrieve_catalog(dealer: &Dealer) -> Option<Vec<Offer>> {
                 println!("success!\n{:?}", parsed);
                 parsed
             }
-            Err(_) => panic!("Tried parsing JSON that wasn't a Catalog"),
+            Err(_) => {
+                panic!("Tried parsing JSON that wasn't a Catalog");
+            }
         },
         _ => panic!("didn't get a valid response, perhaps there is no connection?"),
     };
+
+    let ids: Vec<String> = catalogs.into_iter().map(|c| c.id).collect();
+    let mut offers: Vec<Offer> = vec![];
+    for id in ids {
+        let offers_response = client
+            .get(format!(
+                "https://squid-api.tjek.com/v2/catalogs/{}/hotspots",
+                id.as_str()
+            ))
+            .header(CONTENT_TYPE, "application/json")
+            .header(ACCEPT, "application/json")
+            .query(&[("dealer_ids", dealer.id.as_str())])
+            .send()
+            .await
+            .unwrap();
+    }
     let temp_offer = Offer {
         id: "test".to_string(),
         price: 12345,
