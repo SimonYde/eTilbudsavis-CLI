@@ -1,4 +1,7 @@
-use reqwest::header::{ACCEPT, CONTENT_TYPE};
+use reqwest::{
+    header::{ACCEPT, CONTENT_TYPE},
+    Client, Response,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -6,11 +9,11 @@ use serde_json::Value;
 async fn main() {
     println!(
         "{:?}",
-        retrieve_offers_from_catalogs(&Dealer::Netto)
+        retrieve_offers_from_dealer(&Dealer::Rema1000)
             .await
             .unwrap()
-            .into_iter()
-            .take(1)
+            .iter()
+            .take(5)
     );
 }
 
@@ -52,8 +55,37 @@ struct Catalog {
     offer_count: u32,
 }
 
-async fn retrieve_offers_from_catalogs(dealer: &Dealer) -> Option<Vec<Offer>> {
-    let client = reqwest::Client::new();
+async fn retrieve_offers_from_dealer(dealer: &Dealer) -> Option<Vec<Offer>> {
+    let client = Client::new();
+    let catalog_response = request_catalogs(dealer, &client).await?;
+
+    let mut catalogs = vec![];
+    if catalog_response.status() == reqwest::StatusCode::OK {
+        catalogs = catalog_response.json::<Vec<Catalog>>().await.ok()?
+    }
+    let mut offers: Vec<Offer> = vec![];
+    for catalog in catalogs {
+        offers.append(&mut retrieve_offers_from_catalog(catalog, &client).await?);
+    }
+    Some(offers)
+}
+
+async fn retrieve_offers_from_catalog(catalog: Catalog, client: &Client) -> Option<Vec<Offer>> {
+    let offers_response = client
+        .get(format!(
+            "https://squid-api.tjek.com/v2/catalogs/{}/hotspots",
+            catalog.id.as_str()
+        ))
+        .header(CONTENT_TYPE, "application/json")
+        .header(ACCEPT, "application/json")
+        .send()
+        .await
+        .ok()?;
+    let parsed = offers_response.json::<Vec<Value>>().await.ok()?;
+    Some(parsed.into_iter().filter_map(create_offer).collect())
+}
+
+async fn request_catalogs(dealer: &Dealer, client: &Client) -> Option<Response> {
     let catalog_response = client
         .get("https://squid-api.tjek.com/v2/catalogs")
         .header(CONTENT_TYPE, "application/json")
@@ -62,36 +94,11 @@ async fn retrieve_offers_from_catalogs(dealer: &Dealer) -> Option<Vec<Offer>> {
         .send()
         .await
         .ok()?;
-
-    let catalogs = if let reqwest::StatusCode::OK = catalog_response.status() {
-        catalog_response.json::<Vec<Catalog>>().await.ok()?
-    } else {
-        panic!("didn't get a valid response, perhaps there is no connection?")
-    };
-
-    let catalog_ids: Vec<String> = catalogs.into_iter().map(|c| c.id).collect();
-    let mut offers: Vec<Offer> = vec![];
-    for id in catalog_ids {
-        let offers_response = client
-            .get(format!(
-                "https://squid-api.tjek.com/v2/catalogs/{}/hotspots",
-                id.as_str()
-            ))
-            .header(CONTENT_TYPE, "application/json")
-            .header(ACCEPT, "application/json")
-            .send()
-            .await
-            .ok()?;
-        let parsed = offers_response.json::<Vec<Value>>().await.unwrap();
-        let mut temp = parsed.into_iter().filter_map(create_offer).collect();
-        offers.append(&mut temp);
-    }
-
-    Some(offers)
+    Some(catalog_response)
 }
 
-fn create_offer(x: Value) -> Option<Offer> {
-    let offer = &x["offer"];
+fn create_offer(offer_wrapper: Value) -> Option<Offer> {
+    let offer = &offer_wrapper["offer"];
     let quantity = &offer["quantity"];
     let factor = quantity["unit"]["si"]["factor"].as_f64()?;
     Some(Offer {
