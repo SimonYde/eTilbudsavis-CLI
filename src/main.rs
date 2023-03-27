@@ -4,25 +4,35 @@ use serde_json::Value;
 
 #[tokio::main]
 async fn main() {
-    let netto = Dealer {
-        id: "9ba51".to_owned(),
-        name: "Netto".to_owned(),
-    };
-    println!("{:?}", netto);
     println!(
         "{:?}",
-        retrieve_offers_from_catalogs(&netto)
+        retrieve_offers_from_catalogs(&Dealer::Netto)
             .await
             .unwrap()
             .into_iter()
-            .last()
-            .unwrap()
+            .take(1)
     );
+}
+
+#[derive(Debug)]
+enum Dealer {
+    Rema1000,
+    Netto,
+}
+
+impl Dealer {
+    fn id(&self) -> String {
+        match self {
+            Dealer::Rema1000 => String::from("11deC"),
+            Dealer::Netto => String::from("9ba51"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Offer {
     id: String,
+    name: String,
     price: u32,
     min_amount: u32,
     max_amount: u32,
@@ -33,12 +43,6 @@ struct Offer {
     end_date: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Dealer {
-    id: String,
-    name: String,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 struct Catalog {
     id: String,
@@ -46,7 +50,6 @@ struct Catalog {
     run_till: String,
     dealer_id: String,
     offer_count: u32,
-    dealer: Dealer,
 }
 
 async fn retrieve_offers_from_catalogs(dealer: &Dealer) -> Option<Vec<Offer>> {
@@ -55,22 +58,15 @@ async fn retrieve_offers_from_catalogs(dealer: &Dealer) -> Option<Vec<Offer>> {
         .get("https://squid-api.tjek.com/v2/catalogs")
         .header(CONTENT_TYPE, "application/json")
         .header(ACCEPT, "application/json")
-        .query(&[("dealer_ids", dealer.id.as_str())])
+        .query(&[("dealer_ids", dealer.id().as_str())])
         .send()
         .await
         .ok()?;
 
-    let catalogs = match catalog_response.status() {
-        reqwest::StatusCode::OK => match catalog_response.json::<Vec<Catalog>>().await {
-            Ok(parsed) => {
-                println!("success!\n{:?}", parsed);
-                parsed
-            }
-            Err(_) => {
-                panic!("Tried parsing JSON that wasn't a Catalog");
-            }
-        },
-        _ => panic!("didn't get a valid response, perhaps there is no connection?"),
+    let catalogs = if let reqwest::StatusCode::OK = catalog_response.status() {
+        catalog_response.json::<Vec<Catalog>>().await.ok()?
+    } else {
+        panic!("didn't get a valid response, perhaps there is no connection?")
     };
 
     let catalog_ids: Vec<String> = catalogs.into_iter().map(|c| c.id).collect();
@@ -100,6 +96,7 @@ fn create_offer(x: Value) -> Option<Offer> {
     let factor = quantity["unit"]["si"]["factor"].as_f64()?;
     Some(Offer {
         id: offer["id"].to_string(),
+        name: offer["heading"].to_string(),
         price: offer["pricing"]["price"].as_u64()? as u32,
         min_amount: quantity["pieces"]["from"].as_u64()? as u32,
         max_amount: quantity["pieces"]["to"].as_u64()? as u32,
