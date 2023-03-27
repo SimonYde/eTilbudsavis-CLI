@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[tokio::main]
 async fn main() {
@@ -12,7 +11,7 @@ async fn main() {
     println!("{:?}", netto);
     println!(
         "{:?}",
-        retrieve_catalog(&netto)
+        retrieve_offers_from_catalogs(&netto)
             .await
             .unwrap()
             .into_iter()
@@ -21,17 +20,20 @@ async fn main() {
     );
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Offer {
     id: String,
     price: u32,
-    amount: u32,
+    min_amount: u32,
+    max_amount: u32,
+    min_size: f64,
+    max_size: f64,
     unit: String,
     start_date: String,
     end_date: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Dealer {
     id: String,
     name: String,
@@ -44,9 +46,10 @@ struct Catalog {
     run_till: String,
     dealer_id: String,
     offer_count: u32,
+    dealer: Dealer,
 }
 
-async fn retrieve_catalog(dealer: &Dealer) -> Option<Vec<Offer>> {
+async fn retrieve_offers_from_catalogs(dealer: &Dealer) -> Option<Vec<Offer>> {
     let client = reqwest::Client::new();
     let catalog_response = client
         .get("https://squid-api.tjek.com/v2/catalogs")
@@ -55,7 +58,7 @@ async fn retrieve_catalog(dealer: &Dealer) -> Option<Vec<Offer>> {
         .query(&[("dealer_ids", dealer.id.as_str())])
         .send()
         .await
-        .unwrap();
+        .ok()?;
 
     let catalogs = match catalog_response.status() {
         reqwest::StatusCode::OK => match catalog_response.json::<Vec<Catalog>>().await {
@@ -70,9 +73,9 @@ async fn retrieve_catalog(dealer: &Dealer) -> Option<Vec<Offer>> {
         _ => panic!("didn't get a valid response, perhaps there is no connection?"),
     };
 
-    let ids: Vec<String> = catalogs.into_iter().map(|c| c.id).collect();
+    let catalog_ids: Vec<String> = catalogs.into_iter().map(|c| c.id).collect();
     let mut offers: Vec<Offer> = vec![];
-    for id in ids {
+    for id in catalog_ids {
         let offers_response = client
             .get(format!(
                 "https://squid-api.tjek.com/v2/catalogs/{}/hotspots",
@@ -80,18 +83,30 @@ async fn retrieve_catalog(dealer: &Dealer) -> Option<Vec<Offer>> {
             ))
             .header(CONTENT_TYPE, "application/json")
             .header(ACCEPT, "application/json")
-            .query(&[("dealer_ids", dealer.id.as_str())])
             .send()
             .await
-            .unwrap();
+            .ok()?;
+        let parsed = offers_response.json::<Vec<Value>>().await.unwrap();
+        let mut temp = parsed.into_iter().filter_map(create_offer).collect();
+        offers.append(&mut temp);
     }
-    let temp_offer = Offer {
-        id: "test".to_string(),
-        price: 12345,
-        amount: 1,
-        unit: "kg".to_string(),
-        start_date: "2023-03-04".to_string(),
-        end_date: "2023-04-04".to_string(),
-    };
-    Some(vec![temp_offer])
+
+    Some(offers)
+}
+
+fn create_offer(x: Value) -> Option<Offer> {
+    let offer = &x["offer"];
+    let quantity = &offer["quantity"];
+    let factor = quantity["unit"]["si"]["factor"].as_f64()?;
+    Some(Offer {
+        id: offer["id"].to_string(),
+        price: offer["pricing"]["price"].as_u64()? as u32,
+        min_amount: quantity["pieces"]["from"].as_u64()? as u32,
+        max_amount: quantity["pieces"]["to"].as_u64()? as u32,
+        min_size: quantity["size"]["from"].as_f64()? * factor,
+        max_size: quantity["size"]["to"].as_f64()? * factor,
+        unit: quantity["unit"]["si"]["symbol"].to_string(),
+        start_date: offer["run_from"].to_string().split('T').next()?.to_string(),
+        end_date: offer["run_till"].to_string().split('T').next()?.to_string(),
+    })
 }
