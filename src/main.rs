@@ -1,3 +1,4 @@
+use better_tilbudsavis::Offer;
 use reqwest::{
     header::{ACCEPT, CONTENT_TYPE},
     Client, Response,
@@ -10,15 +11,12 @@ async fn main() {
     let mut offers_from_rema = retrieve_offers_from_dealer(&Dealer::Rema1000)
         .await
         .unwrap();
-    // offers_from_rema.truncate(6);
+    offers_from_rema.truncate(6);
     println!("{:?}", offers_from_rema);
-    println!(
-        "{:?}\n",
-        offers_from_rema
-            .iter()
-            .map(cost_per_unit)
-            .collect::<Vec<f64>>()
-    );
+    offers_from_rema
+        .iter()
+        .map(Offer::cost_per_unit)
+        .for_each(|f| println!("{:.1$}", f, 2));
 
     println!(
         "{:?}",
@@ -35,13 +33,35 @@ async fn main() {
 enum Dealer {
     Rema1000,
     Netto,
+    DagliBrugsen,
+    SuperBrugsen,
+    Aldi,
+    Bilka,
+    Coop365,
+    Irma,
+    Føtex,
+    Lidl,
+    MENY,
+    Kvickly,
+    SPAR,
 }
 
 impl Dealer {
-    fn id(&self) -> String {
+    fn id(&self) -> &'static str {
         match self {
-            Dealer::Rema1000 => String::from("11deC"),
-            Dealer::Netto => String::from("9ba51"),
+            Dealer::Rema1000 => "11deC",
+            Dealer::Netto => "9ba51",
+            Dealer::DagliBrugsen => "d311fg",
+            Dealer::Aldi => "98b7e",
+            Dealer::Bilka => "93f13",
+            Dealer::Coop365 => "DWZE1w",
+            Dealer::Irma => "d432U",
+            Dealer::Føtex => "bdf5A",
+            Dealer::Lidl => "71c90",
+            Dealer::MENY => "267e1m",
+            Dealer::Kvickly => "c1edq",
+            Dealer::SPAR => "88ddE",
+            Dealer::SuperBrugsen => "0b1e8",
         }
     }
 }
@@ -60,6 +80,15 @@ struct Offer {
     end_date: String,
 }
 
+impl Offer {
+    fn cost_per_unit(&self) -> f64 {
+        match self.unit.as_str() {
+            "kg" | "l" => self.price / self.max_size,
+            _ => self.price,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Catalog {
     id: String,
@@ -73,14 +102,21 @@ async fn retrieve_offers_from_dealer(dealer: &Dealer) -> Option<Vec<Offer>> {
     let client = Client::new();
     let catalog_response = request_catalogs(dealer, &client).await?;
 
-    let mut catalogs = vec![];
-    if catalog_response.status() == reqwest::StatusCode::OK {
-        catalogs = catalog_response.json::<Vec<Catalog>>().await.ok()?
-    }
-    let mut offers: Vec<Offer> = vec![];
-    for catalog in catalogs {
-        offers.append(&mut retrieve_offers_from_catalog(catalog, &client).await?);
-    }
+    let catalogs = match catalog_response.status() {
+        reqwest::StatusCode::OK => catalog_response.json::<Vec<Catalog>>().await.ok()?,
+        _ => vec![],
+    };
+
+    let futures_offers = catalogs
+        .into_iter()
+        .map(|catalog| retrieve_offers_from_catalog(catalog, &client));
+    let offers = futures::future::join_all(futures_offers)
+        .await
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect();
+
     Some(offers)
 }
 
@@ -95,8 +131,14 @@ async fn retrieve_offers_from_catalog(catalog: Catalog, client: &Client) -> Opti
         .send()
         .await
         .ok()?;
-    let parsed = offers_response.json::<Vec<Value>>().await.ok()?;
-    Some(parsed.into_iter().filter_map(create_offer).collect())
+    let parsed = offers_response
+        .json::<Vec<Value>>()
+        .await
+        .ok()?
+        .into_iter()
+        .filter_map(create_offer)
+        .collect();
+    Some(parsed)
 }
 
 async fn request_catalogs(dealer: &Dealer, client: &Client) -> Option<Response> {
@@ -104,7 +146,7 @@ async fn request_catalogs(dealer: &Dealer, client: &Client) -> Option<Response> 
         .get("https://squid-api.tjek.com/v2/catalogs")
         .header(CONTENT_TYPE, "application/json")
         .header(ACCEPT, "application/json")
-        .query(&[("dealer_ids", dealer.id().as_str())])
+        .query(&[("dealer_ids", dealer.id())])
         .send()
         .await
         .ok()?;
@@ -127,12 +169,4 @@ fn create_offer(offer_wrapper: Value) -> Option<Offer> {
         start_date: offer["run_from"].as_str()?.split('T').next()?.to_string(),
         end_date: offer["run_till"].as_str()?.split('T').next()?.to_string(),
     })
-}
-
-fn cost_per_unit(offer: &Offer) -> f64 {
-    match offer.unit.as_str() {
-        "kg" => offer.price / offer.max_size,
-        "l" => offer.price / offer.max_size,
-        _ => offer.price,
-    }
 }
