@@ -7,13 +7,27 @@ use serde_json::Value;
 
 #[tokio::main]
 async fn main() {
+    let mut offers_from_rema = retrieve_offers_from_dealer(&Dealer::Rema1000)
+        .await
+        .unwrap();
+    // offers_from_rema.truncate(6);
+    println!("{:?}", offers_from_rema);
+    println!(
+        "{:?}\n",
+        offers_from_rema
+            .iter()
+            .map(cost_per_unit)
+            .collect::<Vec<f64>>()
+    );
+
     println!(
         "{:?}",
-        retrieve_offers_from_dealer(&Dealer::Rema1000)
+        retrieve_offers_from_dealer(&Dealer::Netto)
             .await
             .unwrap()
             .iter()
-            .take(5)
+            .take(3)
+            .collect::<Vec<&Offer>>()
     );
 }
 
@@ -36,7 +50,7 @@ impl Dealer {
 struct Offer {
     id: String,
     name: String,
-    price: u32,
+    price: f64,
     min_amount: u32,
     max_amount: u32,
     min_size: f64,
@@ -102,15 +116,23 @@ fn create_offer(offer_wrapper: Value) -> Option<Offer> {
     let quantity = &offer["quantity"];
     let factor = quantity["unit"]["si"]["factor"].as_f64()?;
     Some(Offer {
-        id: offer["id"].to_string(),
-        name: offer["heading"].to_string(),
-        price: offer["pricing"]["price"].as_u64()? as u32,
+        id: offer["id"].as_str()?.to_owned(),
+        name: offer["heading"].as_str()?.to_owned(),
+        price: offer["pricing"]["price"].as_f64()?,
         min_amount: quantity["pieces"]["from"].as_u64()? as u32,
         max_amount: quantity["pieces"]["to"].as_u64()? as u32,
         min_size: quantity["size"]["from"].as_f64()? * factor,
         max_size: quantity["size"]["to"].as_f64()? * factor,
-        unit: quantity["unit"]["si"]["symbol"].to_string(),
-        start_date: offer["run_from"].to_string().split('T').next()?.to_string(),
-        end_date: offer["run_till"].to_string().split('T').next()?.to_string(),
+        unit: quantity["unit"]["si"]["symbol"].as_str()?.to_owned(),
+        start_date: offer["run_from"].as_str()?.split('T').next()?.to_string(),
+        end_date: offer["run_till"].as_str()?.split('T').next()?.to_string(),
     })
+}
+
+fn cost_per_unit(offer: &Offer) -> f64 {
+    match offer.unit.as_str() {
+        "kg" => offer.price / offer.max_size,
+        "l" => offer.price / offer.max_size,
+        _ => offer.price,
+    }
 }
