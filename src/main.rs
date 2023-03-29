@@ -1,4 +1,6 @@
-use better_tilbudsavis::Offer;
+mod dealer;
+use crate::dealer::Dealer;
+
 use reqwest::{
     header::{ACCEPT, CONTENT_TYPE},
     Client, Response,
@@ -16,54 +18,11 @@ async fn main() {
     offers_from_rema
         .iter()
         .map(Offer::cost_per_unit)
-        .for_each(|f| println!("{:.1$}", f, 2));
-
-    println!(
-        "{:?}",
-        retrieve_offers_from_dealer(&Dealer::Netto)
-            .await
-            .unwrap()
-            .iter()
-            .take(3)
-            .collect::<Vec<&Offer>>()
-    );
-}
-
-#[derive(Debug)]
-enum Dealer {
-    Rema1000,
-    Netto,
-    DagliBrugsen,
-    SuperBrugsen,
-    Aldi,
-    Bilka,
-    Coop365,
-    Irma,
-    Føtex,
-    Lidl,
-    MENY,
-    Kvickly,
-    SPAR,
-}
-
-impl Dealer {
-    fn id(&self) -> &'static str {
-        match self {
-            Dealer::Rema1000 => "11deC",
-            Dealer::Netto => "9ba51",
-            Dealer::DagliBrugsen => "d311fg",
-            Dealer::Aldi => "98b7e",
-            Dealer::Bilka => "93f13",
-            Dealer::Coop365 => "DWZE1w",
-            Dealer::Irma => "d432U",
-            Dealer::Føtex => "bdf5A",
-            Dealer::Lidl => "71c90",
-            Dealer::MENY => "267e1m",
-            Dealer::Kvickly => "c1edq",
-            Dealer::SPAR => "88ddE",
-            Dealer::SuperBrugsen => "0b1e8",
-        }
-    }
+        .for_each(|f| print!("{:.1$}, ", f, 2));
+    println!();
+    let mut offers_from_netto = retrieve_offers_from_dealer(&Dealer::Netto).await.unwrap();
+    offers_from_netto.truncate(6);
+    println!("{:?}", offers_from_netto);
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -116,7 +75,6 @@ async fn retrieve_offers_from_dealer(dealer: &Dealer) -> Option<Vec<Offer>> {
         .flatten()
         .flatten()
         .collect();
-
     Some(offers)
 }
 
@@ -142,30 +100,32 @@ async fn retrieve_offers_from_catalog(catalog: Catalog, client: &Client) -> Opti
 }
 
 async fn request_catalogs(dealer: &Dealer, client: &Client) -> Option<Response> {
-    let catalog_response = client
+    client
         .get("https://squid-api.tjek.com/v2/catalogs")
         .header(CONTENT_TYPE, "application/json")
         .header(ACCEPT, "application/json")
         .query(&[("dealer_ids", dealer.id())])
         .send()
         .await
-        .ok()?;
-    Some(catalog_response)
+        .ok()
 }
 
 fn create_offer(offer_wrapper: Value) -> Option<Offer> {
     let offer = &offer_wrapper["offer"];
     let quantity = &offer["quantity"];
-    let factor = quantity["unit"]["si"]["factor"].as_f64()?;
+    let amount = &quantity["pieces"];
+    let size = &quantity["size"];
+    let unit = &quantity["unit"]["si"];
+    let factor = &unit["factor"].as_f64()?;
     Some(Offer {
         id: offer["id"].as_str()?.to_owned(),
         name: offer["heading"].as_str()?.to_owned(),
         price: offer["pricing"]["price"].as_f64()?,
-        min_amount: quantity["pieces"]["from"].as_u64()? as u32,
-        max_amount: quantity["pieces"]["to"].as_u64()? as u32,
-        min_size: quantity["size"]["from"].as_f64()? * factor,
-        max_size: quantity["size"]["to"].as_f64()? * factor,
-        unit: quantity["unit"]["si"]["symbol"].as_str()?.to_owned(),
+        min_amount: amount["from"].as_u64()? as u32,
+        max_amount: amount["to"].as_u64()? as u32,
+        min_size: size["from"].as_f64()? * factor,
+        max_size: size["to"].as_f64()? * factor,
+        unit: unit["symbol"].as_str()?.to_owned(),
         start_date: offer["run_from"].as_str()?.split('T').next()?.to_string(),
         end_date: offer["run_till"].as_str()?.split('T').next()?.to_string(),
     })
