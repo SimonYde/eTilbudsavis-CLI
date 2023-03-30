@@ -1,4 +1,5 @@
-#[derive(Debug)]
+use strum::EnumIter;
+#[derive(Debug, EnumIter)]
 pub enum Dealer {
     Rema1000,
     Netto,
