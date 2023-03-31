@@ -7,8 +7,7 @@ use reqwest::{
     header::{ACCEPT, CONTENT_TYPE},
     Client, Response,
 };
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::{Deserialize, Deserializer, Serialize};
 use strum::IntoEnumIterator;
 
 #[tokio::main]
@@ -17,6 +16,7 @@ async fn main() {
     for dealer in Dealer::iter() {
         offers.append(&mut retrieve_offers_from_dealer(&dealer).await.unwrap());
     }
+    println!("{}", offers.len());
     offers.retain(|offer| offer.name.contains("Pepsi"));
     println!("{:?}", offers);
 }
@@ -26,8 +26,6 @@ async fn main() {
 // let size = &quantity["size"];
 // let unit = &quantity["unit"]["si"];
 // let factor = &unit["factor"].as_f64()?;
-// min_amount: amount["from"].as_u64()? as u32,
-// max_amount: amount["to"].as_u64()? as u32,
 // min_size: size["from"].as_f64()? * factor,
 // max_size: size["to"].as_f64()? * factor,
 // unit: unit["symbol"].as_str()?.to_owned(),
@@ -35,31 +33,82 @@ async fn main() {
 // run_till: offer["run_till"].as_str()?.split('T').next()?.to_string(),
 // dealer: dealer_name.to_string(),
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Debug)]
 struct Offer {
     // id: String,
-    #[serde(rename = "heading")]
     name: String,
-    #[serde(rename = "pricing", deserialize_with = "deserialize_offer_price")]
     price: f64,
-    // min_amount: u32,
-    // max_amount: u32,
-    // min_size: f64,
-    // max_size: f64,
-    // unit: String,
-    // run_from: String,
-    // run_till: String,
+    min_amount: u32,
+    max_amount: u32,
+    min_size: f64,
+    max_size: f64,
+    unit: String,
+    run_from: String,
+    run_till: String,
     // dealer: String,
+    cost_per_unit: f64,
 }
 
-// impl Offer {
-//     fn cost_per_unit(&self) -> f64 {
-//         match self.unit.as_str() {
-//             "kg" | "l" => self.price / self.max_size,
-//             _ => self.price,
-//         }
-//     }
-// }
+impl<'de> Deserialize<'de> for Offer {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Outer {
+            #[serde(rename = "heading")]
+            name: String,
+            #[serde(rename = "pricing", deserialize_with = "deserialize_offer_price")]
+            price: f64,
+            run_from: String,
+            run_till: String,
+            quantity: Quantity,
+        }
+
+        #[derive(Deserialize)]
+        struct Quantity {
+            unit: Unit,
+            pieces: Pieces,
+            size: Size,
+        }
+
+        #[derive(Deserialize)]
+        struct Size {
+            from: f64,
+            to: f64,
+        }
+
+        #[derive(Deserialize)]
+        struct Pieces {
+            from: u32,
+            to: u32,
+        }
+
+        #[derive(Deserialize)]
+        struct Unit {
+            si: SI,
+        }
+        #[derive(Deserialize)]
+        struct SI {
+            symbol: String,
+            factor: f64,
+        }
+
+        let helper = Outer::deserialize(deserializer)?;
+        Ok(Offer {
+            name: helper.name,
+            price: helper.price,
+            min_amount: helper.quantity.pieces.from,
+            max_amount: helper.quantity.pieces.to,
+            min_size: helper.quantity.size.from * helper.quantity.unit.si.factor,
+            max_size: helper.quantity.size.to * helper.quantity.unit.si.factor,
+            run_from: helper.run_from.split('T').next().unwrap().to_owned(),
+            run_till: helper.run_till.split('T').next().unwrap().to_owned(),
+            unit: helper.quantity.unit.si.symbol,
+            cost_per_unit: helper.price / helper.quantity.size.to,
+        })
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Catalog {
