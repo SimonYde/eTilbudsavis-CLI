@@ -13,8 +13,13 @@ where
     let helper = Dealer::deserialize(deserializer)?;
     Ok(helper.name)
 }
+
 #[derive(Deserialize)]
-pub struct Outer {
+pub struct OfferWrapper {
+    offer: Outer,
+}
+#[derive(Deserialize)]
+struct Outer {
     #[serde(rename = "heading")]
     name: String,
     pricing: Pricing,
@@ -57,20 +62,22 @@ struct SI {
     symbol: String,
     factor: f64,
 }
-pub fn deserialize_offer(outer: Outer, dealer_name: &str) -> Offer {
+pub fn deserialize_offer(offer_wrapper: OfferWrapper, dealer_name: &str) -> Offer {
+    let offer = &offer_wrapper.offer;
+    let factor = &offer.quantity.unit.si.factor;
+    let pieces = &offer.quantity.pieces;
+    let size = &offer.quantity.size;
     Offer {
-        name: outer.name,
-        price: outer.pricing.price,
-        min_amount: outer.quantity.pieces.from,
-        max_amount: outer.quantity.pieces.to,
-        min_size: outer.quantity.size.from * outer.quantity.unit.si.factor,
-        max_size: outer.quantity.size.to * outer.quantity.unit.si.factor,
-        run_from: outer.run_from.split('T').next().unwrap().to_owned(),
-        run_till: outer.run_till.split('T').next().unwrap().to_owned(),
-        unit: outer.quantity.unit.si.symbol,
-        cost_per_unit: outer.pricing.price
-            / (outer.quantity.size.to * outer.quantity.unit.si.factor)
-            / outer.quantity.pieces.to as f64,
+        name: offer.name.to_owned(),
+        price: offer.pricing.price,
+        min_amount: pieces.from,
+        max_amount: pieces.to,
+        min_size: size.from * factor,
+        max_size: size.to * factor,
+        unit: offer.quantity.unit.si.symbol.to_owned(),
+        cost_per_unit: offer.pricing.price / (size.to * factor) / pieces.to as f64,
         dealer: dealer_name.to_owned(),
+        run_from: offer.run_from.split('T').next().unwrap().to_owned(),
+        run_till: offer.run_till.split('T').next().unwrap().to_owned(),
     }
 }

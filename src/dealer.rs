@@ -1,5 +1,6 @@
+use serde::{Deserialize, Serialize};
 use strum::EnumIter;
-#[derive(Debug, EnumIter)]
+#[derive(Hash, Debug, EnumIter, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Dealer {
     Rema1000,
     Netto,
@@ -33,5 +34,24 @@ impl Dealer {
             Dealer::SPAR => "88ddE",
             Dealer::SuperBrugsen => "0b1e8",
         }
+    }
+}
+
+pub fn dealer_from_string(dealer_name: &str) -> Dealer {
+    match dealer_name.to_lowercase().as_str() {
+        "bilka" => Dealer::Bilka,
+        "coop365" => Dealer::Coop365,
+        "lidl" => Dealer::Lidl,
+        "rema1000" => Dealer::Rema1000,
+        "spar" => Dealer::SPAR,
+        "meny" => Dealer::MENY,
+        "føtex" => Dealer::Føtex,
+        "irma" => Dealer::Irma,
+        "aldi" => Dealer::Aldi,
+        "netto" => Dealer::Netto,
+        "kvickly" => Dealer::Kvickly,
+        "daglibrugsen" | "dagli'brugsen" => Dealer::DagliBrugsen,
+        "superbrugsen" => Dealer::SuperBrugsen,
+        _ => panic!("Tried to look up dealer that doesn't exist"),
     }
 }
