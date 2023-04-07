@@ -1,22 +1,23 @@
-mod dealer;
-use crate::dealer::*;
-mod deserialize;
-use crate::deserialize::*;
-
 use chrono::{NaiveDate, Utc};
+use clap::Parser;
 use reqwest::{
     header::{ACCEPT, CONTENT_TYPE},
     Client, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::{env, fs};
-use strum::IntoEnumIterator;
+use std::fs;
+// use strum::IntoEnumIterator;
+
+mod dealer;
+use crate::dealer::*;
+mod deserialize;
+use crate::deserialize::*;
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
-    let userdata = match fs::read_to_string("./userdata.json") {
+    let args = Args::parse();
+    let mut userdata = match fs::read_to_string("./userdata.json") {
         Ok(data) => serde_json::from_str(&data).unwrap(),
         Err(_) => UserData {
             favorites: HashSet::new(),
@@ -27,58 +28,71 @@ async fn main() {
                 .to_string(),
         }, // Never run before
     };
-    let mut offers = parse_args(userdata, args).await;
-
+    let mut favorites_changed = false;
+    let before = userdata.favorites.clone();
+    add_favorites(&mut userdata, &args.add_favorites);
+    remove_favorites(&mut userdata, &args.remove_favorites);
+    let after = userdata.favorites.clone();
+    if !after
+        .difference(&before)
+        .collect::<HashSet<&Dealer>>()
+        .is_empty()
+    {
+        favorites_changed = true;
+    }
+    println!("favorites changed: {}", favorites_changed);
+    let mut offers = handle_search(userdata, args.search, favorites_changed).await;
     println!("Amount of offers: {}", offers.len());
     offers.sort_by(|a, b| a.cost_per_unit.total_cmp(&b.cost_per_unit).reverse());
     offers.iter().for_each(|offer| println!("{:?}", offer));
 }
 
-async fn parse_args(mut userdata: UserData, args: Vec<String>) -> Vec<Offer> {
-    let mut favorites_changed = false;
-    let mut offers = vec![];
-    if args.len() > 1 {
-        match args[1].as_str() {
-            "--search" | "-s" => {
-                offers = retrieve_offers(userdata, favorites_changed).await;
-                println!("Amount of offers: {}", offers.len());
-                if args.len() > 2 && !args[2].starts_with("--") {
-                    println!("searching for: {}", args[2]);
-                    offers.retain(|offer| offer.name.to_lowercase().contains(&args[2]));
-                } else {
-                    println!("No search term provided, not filtering offers...")
-                }
-                offers
-            }
-            "--favorites" | "-f" => {
-                println!("test favourites");
-                if args.len() > 2 {
-                    match args[2].to_lowercase().as_str() {
-                        "bilka" | "coop365" | "lidl" | "rema1000" | "spar" | "meny" | "føtex"
-                        | "irma" | "aldi" | "netto" | "kvickly" | "daglibrugsen"
-                        | "dagli'brugsen" | "superbrugsen" => {
-                            userdata.favorites.insert(dealer_from_string(&args[2]));
-                        }
-                        _ => panic!("Argument to \"--favorites\" was invalid."),
-                    }
-                    favorites_changed = true;
-
-                    fs::write("./userdata.json", serde_json::to_string(&userdata).unwrap())
-                        .expect("failed to write UserData");
-                    retrieve_offers(userdata, favorites_changed).await
-                } else {
-                    offers
-                }
-            }
-            _ => panic!("invalid arguments given"),
-        }
-    } else {
-        println!("args empty");
-        offers
+fn remove_favorites(userdata: &mut UserData, favorites: &Vec<String>) {
+    for favorite in favorites {
+        userdata.favorites.remove(&dealer_from_string(favorite));
     }
 }
 
-async fn retrieve_offers(mut userdata: UserData, favorites_changed: bool) -> Vec<Offer> {
+fn add_favorites(userdata: &mut UserData, favorites: &Vec<String>) {
+    for favorite in favorites {
+        userdata.favorites.insert(dealer_from_string(favorite));
+    }
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    add_favorites: Vec<String>,
+    #[arg(short, long)]
+    remove_favorites: Vec<String>,
+    #[arg(short, long)]
+    search: Vec<String>,
+}
+
+async fn handle_search(
+    mut userdata: UserData,
+    search_items: Vec<String>,
+    favorites_changed: bool,
+) -> Vec<Offer> {
+    let mut offers = vec![];
+    match search_items.len() {
+        1.. => {
+            for search in search_items {
+                let mut temp = retrieve_offers(&mut userdata, favorites_changed).await;
+                temp.retain(|offer| offer.name.to_lowercase().contains(&search));
+                offers.append(&mut temp);
+            }
+        }
+        0 => {
+            offers = retrieve_offers(&mut userdata, favorites_changed).await;
+        }
+        _ => panic!("shouldn't be possible"),
+    }
+    offers
+}
+
+async fn retrieve_offers(userdata: &mut UserData, favorites_changed: bool) -> Vec<Offer> {
     let mut offers = vec![];
     let today = Utc::now().date_naive();
     let naive_date =
@@ -92,7 +106,7 @@ async fn retrieve_offers(mut userdata: UserData, favorites_changed: bool) -> Vec
                     .expect("Failed to retrieve remote offers"),
             );
         }
-        cache_retrieved_offers(&offers, &mut userdata).expect("Was unable to cache offers");
+        cache_retrieved_offers(&offers, userdata).expect("Was unable to cache offers");
     } else {
         offers = retrieve_cached_offers().expect("Was unable to receive offers from cache");
     }
