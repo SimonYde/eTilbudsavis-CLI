@@ -32,43 +32,47 @@ async fn main() {
     let before = userdata.favorites.clone();
     add_favorites(&mut userdata, &args.add_favorites);
     remove_favorites(&mut userdata, &args.remove_favorites);
-    let after = userdata.favorites.clone();
-    println!("before: {:?}", before);
-    println!("after: {:?}", after);
-    println!("difference: {:?}", after.symmetric_difference(&before));
-    println!("count: {}", after.symmetric_difference(&before).count());
-    if after.symmetric_difference(&before).count() > 0 {
+    if userdata.favorites.symmetric_difference(&before).count() > 0 {
         favorites_changed = true;
     }
     println!("favorites changed: {}", favorites_changed);
     let mut offers = handle_search(userdata, args.search, favorites_changed).await;
     println!("Amount of offers: {}", offers.len());
     offers.sort_by(|a, b| a.cost_per_unit.total_cmp(&b.cost_per_unit).reverse());
-    // offers.iter().for_each(|offer| println!("{:?}", offer));
+
+    if args.print {
+        offers.iter().for_each(|offer| println!("{:?}", offer))
+    }
 }
 
 fn remove_favorites(userdata: &mut UserData, favorites: &Vec<String>) {
     for favorite in favorites {
-        println!("remove_favorites was called");
-        userdata.favorites.remove(&dealer_from_string(favorite));
+        userdata
+            .favorites
+            .remove(&dealer_from_string(favorite.trim()));
     }
 }
 
 fn add_favorites(userdata: &mut UserData, favorites: &Vec<String>) {
     for favorite in favorites {
-        userdata.favorites.insert(dealer_from_string(favorite));
+        userdata
+            .favorites
+            .insert(dealer_from_string(favorite.trim()));
     }
 }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long)]
+    #[arg(use_value_delimiter = true, value_delimiter = ',', short, long)]
     add_favorites: Vec<String>,
-    #[arg(short, long)]
+    #[arg(use_value_delimiter = true, value_delimiter = ',', short, long)]
     remove_favorites: Vec<String>,
-    #[arg(short, long)]
+    #[arg(use_value_delimiter = true, value_delimiter = ',', short, long)]
     search: Vec<String>,
+
+    #[arg(short, long)]
+    print: bool,
 }
 
 async fn handle_search(
@@ -81,7 +85,7 @@ async fn handle_search(
         1.. => {
             for search in search_items {
                 let mut temp = retrieve_offers(&mut userdata, favorites_changed).await;
-                temp.retain(|offer| offer.name.to_lowercase().contains(&search));
+                temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()));
                 offers.append(&mut temp);
             }
         }
