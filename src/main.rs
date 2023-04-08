@@ -33,11 +33,7 @@ async fn main() {
     add_favorites(&mut userdata, &args.add_favorites);
     remove_favorites(&mut userdata, &args.remove_favorites);
     let after = userdata.favorites.clone();
-    if !after
-        .difference(&before)
-        .collect::<HashSet<&Dealer>>()
-        .is_empty()
-    {
+    if !after.difference(&before).count() > 0 {
         favorites_changed = true;
     }
     println!("favorites changed: {}", favorites_changed);
