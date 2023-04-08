@@ -33,18 +33,23 @@ async fn main() {
     add_favorites(&mut userdata, &args.add_favorites);
     remove_favorites(&mut userdata, &args.remove_favorites);
     let after = userdata.favorites.clone();
-    if !after.difference(&before).count() > 0 {
+    println!("before: {:?}", before);
+    println!("after: {:?}", after);
+    println!("difference: {:?}", after.symmetric_difference(&before));
+    println!("count: {}", after.symmetric_difference(&before).count());
+    if after.symmetric_difference(&before).count() > 0 {
         favorites_changed = true;
     }
     println!("favorites changed: {}", favorites_changed);
     let mut offers = handle_search(userdata, args.search, favorites_changed).await;
     println!("Amount of offers: {}", offers.len());
     offers.sort_by(|a, b| a.cost_per_unit.total_cmp(&b.cost_per_unit).reverse());
-    offers.iter().for_each(|offer| println!("{:?}", offer));
+    // offers.iter().for_each(|offer| println!("{:?}", offer));
 }
 
 fn remove_favorites(userdata: &mut UserData, favorites: &Vec<String>) {
     for favorite in favorites {
+        println!("remove_favorites was called");
         userdata.favorites.remove(&dealer_from_string(favorite));
     }
 }
