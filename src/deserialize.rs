@@ -77,7 +77,15 @@ pub fn deserialize_offer(offer_wrapper: OfferWrapper, dealer_name: &str) -> Offe
         unit: offer.quantity.unit.si.symbol.to_owned(),
         cost_per_unit: offer.pricing.price / (size.to * factor) / pieces.to as f64,
         dealer: dealer_name.to_owned(),
-        run_from: offer.run_from.split('T').next().unwrap().to_owned(),
-        run_till: offer.run_till.split('T').next().unwrap().to_owned(),
+        run_from: chrono::NaiveDate::parse_from_str(
+            offer.run_from.split('T').next().unwrap(),
+            "%Y-%m-%d",
+        )
+        .expect("failed to format NaiveDate from API date"),
+        run_till: chrono::NaiveDate::parse_from_str(
+            offer.run_till.split('T').next().unwrap(),
+            "%Y-%m-%d",
+        )
+        .expect("failed to format NaiveDate from API date"),
     }
 }

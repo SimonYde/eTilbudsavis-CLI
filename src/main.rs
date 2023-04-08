@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, Utc};
+use chrono::{Days, NaiveDate, Utc};
 use clap::Parser;
 use reqwest::{
     header::{ACCEPT, CONTENT_TYPE},
@@ -18,14 +18,13 @@ use crate::deserialize::*;
 async fn main() {
     let args = Args::parse();
     let mut userdata = match fs::read_to_string("./userdata.json") {
-        Ok(data) => serde_json::from_str(&data).unwrap(),
+        Ok(data) => serde_json::from_str(&data).expect("shouldn't happen"),
         Err(_) => UserData {
             favorites: HashSet::new(),
             rerun_date: Utc::now()
                 .date_naive()
-                .checked_sub_days(chrono::Days::new(1))
-                .unwrap()
-                .to_string(),
+                .checked_sub_days(Days::new(1))
+                .unwrap(),
         }, // Never run before
     };
     let mut favorites_changed = false;
@@ -90,6 +89,7 @@ async fn handle_search(
             }
         }
         0 => {
+            println!("No search term provided, not filtering offers...");
             offers = retrieve_offers(&mut userdata, favorites_changed).await;
         }
         _ => panic!("shouldn't be possible"),
@@ -100,9 +100,7 @@ async fn handle_search(
 async fn retrieve_offers(userdata: &mut UserData, favorites_changed: bool) -> Vec<Offer> {
     let mut offers = vec![];
     let today = Utc::now().date_naive();
-    let naive_date =
-        NaiveDate::parse_from_str(&userdata.rerun_date, "%Y-%m-%d").expect("Date has wrong format");
-    let diff = today.signed_duration_since(naive_date);
+    let diff = today.signed_duration_since(userdata.rerun_date);
     if diff.num_days() > 0 || favorites_changed {
         for dealer in &userdata.favorites {
             offers.append(
@@ -121,7 +119,7 @@ async fn retrieve_offers(userdata: &mut UserData, favorites_changed: bool) -> Ve
 #[derive(Serialize, Deserialize)]
 struct UserData {
     favorites: HashSet<Dealer>,
-    rerun_date: String,
+    rerun_date: NaiveDate,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -136,8 +134,8 @@ pub struct Offer {
     min_size: f64,
     max_size: f64,
     unit: String,
-    run_from: String,
-    run_till: String,
+    run_from: NaiveDate,
+    run_till: NaiveDate,
 }
 
 #[derive(Deserialize)]
@@ -170,16 +168,10 @@ fn cache_retrieved_offers(offers: &Vec<Offer>, userdata: &mut UserData) -> std::
         serde_json::to_string(offers).expect("Could not write \"cached offers\""),
     )?;
     println!("WRITTEN offer cache");
-    let most_soon_to_run_out = offers
-        .iter()
-        .map(|o| &o.run_till)
-        .map(|date| {
-            NaiveDate::parse_from_str(date, "%Y-%m-%d")
-                .expect("Couldn't parse NaiveDate, did API format change?")
-        })
-        .min()
-        .unwrap();
-    userdata.rerun_date = most_soon_to_run_out.to_string();
+    userdata.rerun_date = match offers.iter().map(|o| o.run_till).min() {
+        Some(date) => date,
+        None => userdata.rerun_date,
+    };
     fs::write("./userdata.json", serde_json::to_string(userdata).unwrap())?;
     println!("WRITTEN date");
     Ok(())
