@@ -17,7 +17,7 @@ use crate::deserialize::*;
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    let mut userdata = match fs::read_to_string("./userdata.json") {
+    let mut userdata = match fs::read_to_string("data/userdata.json") {
         Ok(data) => serde_json::from_str(&data).expect("shouldn't happen"),
         Err(_) => UserData {
             favorites: HashSet::new(),
@@ -56,7 +56,7 @@ struct UserData {
     rerun_date: NaiveDate,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct Offer {
     // id: String,
     name: String,
@@ -123,8 +123,7 @@ async fn handle_search(
 async fn retrieve_offers(userdata: &mut UserData, favorites_changed: bool) -> Vec<Offer> {
     let mut offers = vec![];
     let today = Utc::now().date_naive();
-    let diff = today.signed_duration_since(userdata.rerun_date);
-    if diff.num_days() > 0 || favorites_changed {
+    if favorites_changed || today.signed_duration_since(userdata.rerun_date).num_days() > 0 {
         for dealer in &userdata.favorites {
             offers.append(
                 &mut retrieve_offers_from_remote(dealer)
@@ -157,7 +156,7 @@ async fn retrieve_offers_from_remote(dealer: &Dealer) -> Option<Vec<Offer>> {
 
 fn cache_retrieved_offers(offers: &Vec<Offer>, userdata: &mut UserData) -> std::io::Result<()> {
     fs::write(
-        "./cached_offers.json",
+        "./data/offer_cache.json",
         serde_json::to_string(offers).expect("Could not write \"cached offers\""),
     )?;
     println!("WRITTEN offer cache");
@@ -165,7 +164,10 @@ fn cache_retrieved_offers(offers: &Vec<Offer>, userdata: &mut UserData) -> std::
         Some(date) => date,
         None => userdata.rerun_date,
     };
-    fs::write("./userdata.json", serde_json::to_string(userdata).unwrap())?;
+    fs::write(
+        "./data/userdata.json",
+        serde_json::to_string(userdata).unwrap(),
+    )?;
     println!("WRITTEN date");
     Ok(())
 }
@@ -173,7 +175,7 @@ fn cache_retrieved_offers(offers: &Vec<Offer>, userdata: &mut UserData) -> std::
 fn retrieve_cached_offers() -> Option<Vec<Offer>> {
     // TODO Why can't I retrieve from subdir? such as ./data/cached_offers.json
     serde_json::from_str(
-        &fs::read_to_string("./cached_offers.json").expect("Cannot open file: cached_offers.json"),
+        &fs::read_to_string("data/offer_cache.json").expect("Cannot open file: cached_offers.json"),
     )
     .ok()
 }
