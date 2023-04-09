@@ -115,6 +115,11 @@ async fn handle_search(
         }
         _ => panic!("shouldn't be possible"),
     }
+    offers.sort_by(|a, b| {
+        (a.name.as_str(), a.dealer.as_str())
+            .partial_cmp(&(b.name.as_str(), b.dealer.as_str()))
+            .expect("couldn't compare Offers in sorting")
+    });
     offers.dedup();
     println!("Amount of offers: {}", offers.len());
     offers
