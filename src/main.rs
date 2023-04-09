@@ -27,36 +27,13 @@ async fn main() {
                 .unwrap(),
         }, // Never run before
     };
-    let mut favorites_changed = false;
-    let before = userdata.favorites.clone();
-    add_favorites(&mut userdata, &args.add_favorites);
-    remove_favorites(&mut userdata, &args.remove_favorites);
-    if userdata.favorites.symmetric_difference(&before).count() > 0 {
-        favorites_changed = true;
-    }
-    println!("favorites changed: {}", favorites_changed);
+    let favorites_changed =
+        handle_favorites(&mut userdata, &args.add_favorites, &args.remove_favorites);
     let mut offers = handle_search(userdata, args.search, favorites_changed).await;
-    println!("Amount of offers: {}", offers.len());
     offers.sort_by(|a, b| a.cost_per_unit.total_cmp(&b.cost_per_unit).reverse());
 
     if args.print {
         offers.iter().for_each(|offer| println!("{:?}", offer))
-    }
-}
-
-fn remove_favorites(userdata: &mut UserData, favorites: &Vec<String>) {
-    for favorite in favorites {
-        userdata
-            .favorites
-            .remove(&dealer_from_string(favorite.trim()));
-    }
-}
-
-fn add_favorites(userdata: &mut UserData, favorites: &Vec<String>) {
-    for favorite in favorites {
-        userdata
-            .favorites
-            .insert(dealer_from_string(favorite.trim()));
     }
 }
 
@@ -72,6 +49,50 @@ struct Args {
 
     #[arg(short, long)]
     print: bool,
+}
+#[derive(Serialize, Deserialize)]
+struct UserData {
+    favorites: HashSet<Dealer>,
+    rerun_date: NaiveDate,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct Offer {
+    // id: String,
+    name: String,
+    dealer: String,
+    price: f64,
+    cost_per_unit: f64,
+    min_amount: u32,
+    max_amount: u32,
+    min_size: f64,
+    max_size: f64,
+    unit: String,
+    run_from: NaiveDate,
+    run_till: NaiveDate,
+}
+
+#[derive(Deserialize)]
+struct Catalog {
+    id: String,
+    #[serde(deserialize_with = "deserialize_dealer_name")]
+    dealer: String,
+    // offer_count: u32,
+}
+
+fn handle_favorites(
+    userdata: &mut UserData,
+    to_add: &Vec<String>,
+    to_remove: &Vec<String>,
+) -> bool {
+    let mut changed = false;
+    for favorite in to_add {
+        changed |= userdata.favorites.insert(dealer_from_string(favorite))
+    }
+    for favorite in to_remove {
+        changed |= userdata.favorites.remove(&dealer_from_string(favorite))
+    }
+    changed
 }
 
 async fn handle_search(
@@ -94,6 +115,8 @@ async fn handle_search(
         }
         _ => panic!("shouldn't be possible"),
     }
+    offers.dedup();
+    println!("Amount of offers: {}", offers.len());
     offers
 }
 
@@ -114,36 +137,6 @@ async fn retrieve_offers(userdata: &mut UserData, favorites_changed: bool) -> Ve
         offers = retrieve_cached_offers().expect("Was unable to receive offers from cache");
     }
     offers
-}
-
-#[derive(Serialize, Deserialize)]
-struct UserData {
-    favorites: HashSet<Dealer>,
-    rerun_date: NaiveDate,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Offer {
-    // id: String,
-    name: String,
-    dealer: String,
-    price: f64,
-    cost_per_unit: f64,
-    min_amount: u32,
-    max_amount: u32,
-    min_size: f64,
-    max_size: f64,
-    unit: String,
-    run_from: NaiveDate,
-    run_till: NaiveDate,
-}
-
-#[derive(Deserialize)]
-struct Catalog {
-    id: String,
-    #[serde(deserialize_with = "deserialize_dealer_name")]
-    dealer: String,
-    // offer_count: u32,
 }
 
 async fn retrieve_offers_from_remote(dealer: &Dealer) -> Option<Vec<Offer>> {

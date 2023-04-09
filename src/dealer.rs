@@ -38,7 +38,7 @@ impl Dealer {
 }
 
 pub fn dealer_from_string(dealer_name: &str) -> Dealer {
-    match dealer_name.to_lowercase().as_str() {
+    match dealer_name.trim().to_lowercase().as_str() {
         "bilka" => Dealer::Bilka,
         "coop365" => Dealer::Coop365,
         "lidl" => Dealer::Lidl,
