@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use strum::EnumIter;
 #[derive(Hash, Debug, EnumIter, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Dealer {
@@ -12,9 +13,9 @@ pub enum Dealer {
     Irma,
     Føtex,
     Lidl,
-    MENY,
+    Meny,
     Kvickly,
-    SPAR,
+    Spar,
 }
 
 impl Dealer {
@@ -29,29 +30,33 @@ impl Dealer {
             Dealer::Irma => "d432U",
             Dealer::Føtex => "bdf5A",
             Dealer::Lidl => "71c90",
-            Dealer::MENY => "267e1m",
+            Dealer::Meny => "267e1m",
             Dealer::Kvickly => "c1edq",
-            Dealer::SPAR => "88ddE",
+            Dealer::Spar => "88ddE",
             Dealer::SuperBrugsen => "0b1e8",
         }
     }
 }
+impl FromStr for Dealer {
+    type Err = ();
 
-pub fn dealer_from_string(dealer_name: &str) -> Dealer {
-    match dealer_name.trim().to_lowercase().as_str() {
-        "bilka" => Dealer::Bilka,
-        "coop365" => Dealer::Coop365,
-        "lidl" => Dealer::Lidl,
-        "rema1000" => Dealer::Rema1000,
-        "spar" => Dealer::SPAR,
-        "meny" => Dealer::MENY,
-        "føtex" => Dealer::Føtex,
-        "irma" => Dealer::Irma,
-        "aldi" => Dealer::Aldi,
-        "netto" => Dealer::Netto,
-        "kvickly" => Dealer::Kvickly,
-        "daglibrugsen" | "dagli'brugsen" => Dealer::DagliBrugsen,
-        "superbrugsen" => Dealer::SuperBrugsen,
-        _ => panic!("Tried to look up dealer that doesn't exist"),
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value = match s.trim().to_lowercase().as_str() {
+            "bilka" => Dealer::Bilka,
+            "coop365" => Dealer::Coop365,
+            "lidl" => Dealer::Lidl,
+            "rema1000" => Dealer::Rema1000,
+            "spar" => Dealer::Spar,
+            "meny" => Dealer::Meny,
+            "føtex" => Dealer::Føtex,
+            "irma" => Dealer::Irma,
+            "aldi" => Dealer::Aldi,
+            "netto" => Dealer::Netto,
+            "kvickly" => Dealer::Kvickly,
+            "daglibrugsen" | "dagli'brugsen" => Dealer::DagliBrugsen,
+            "superbrugsen" => Dealer::SuperBrugsen,
+            _ => return Err(()),
+        };
+        Ok(value)
     }
 }

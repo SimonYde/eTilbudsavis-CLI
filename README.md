@@ -1,9 +1,8 @@
 # Better Tilbudsavis
 ## A Better way to receive grocery discounts
 
-[[##another-heading]]
-
-
-
-
-## another heading
+Todo:
+- [ ] tables
+- [ ] webserver
+- [ ] json to tables?
+- [ ] config files?

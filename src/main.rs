@@ -1,5 +1,6 @@
 use chrono::{Days, NaiveDate, Utc};
 use clap::Parser;
+use futures::StreamExt;
 use reqwest::{
     header::{ACCEPT, CONTENT_TYPE},
     Client, Response,
@@ -7,6 +8,7 @@ use reqwest::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
+use std::str::FromStr;
 // use strum::IntoEnumIterator;
 
 mod dealer;
@@ -16,17 +18,9 @@ use crate::deserialize::*;
 
 #[tokio::main]
 async fn main() {
+    let runtime = std::time::Instant::now();
     let args = Args::parse();
-    let mut userdata = match fs::read_to_string("data/userdata.json") {
-        Ok(data) => serde_json::from_str(&data).expect("shouldn't happen"),
-        Err(_) => UserData {
-            favorites: HashSet::new(),
-            rerun_date: Utc::now()
-                .date_naive()
-                .checked_sub_days(Days::new(1))
-                .unwrap(),
-        }, // Never run before
-    };
+    let mut userdata = get_userdata();
     let favorites_changed =
         handle_favorites(&mut userdata, &args.add_favorites, &args.remove_favorites);
     let mut offers = handle_search(userdata, args.search, favorites_changed).await;
@@ -35,6 +29,7 @@ async fn main() {
     if args.print {
         offers.iter().for_each(|offer| println!("{:?}", offer))
     }
+    println!("{:?}", runtime.elapsed());
 }
 
 #[derive(Parser, Debug)]
@@ -50,10 +45,33 @@ struct Args {
     #[arg(short, long)]
     print: bool,
 }
+
+fn get_userdata() -> UserData {
+    match fs::read_to_string("data/userdata.json") {
+        Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
+        Err(_) => UserData::default(),
+    }
+}
 #[derive(Serialize, Deserialize)]
 struct UserData {
     favorites: HashSet<Dealer>,
     rerun_date: NaiveDate,
+}
+
+impl Default for UserData {
+    fn default() -> Self {
+        println!(
+            "First run, or something modified userdata outside running of this program.\n
+            Reinitialising userdata with no favorites..."
+        );
+        UserData {
+            favorites: HashSet::new(),
+            rerun_date: Utc::now()
+                .date_naive()
+                .checked_sub_days(Days::new(1))
+                .unwrap(), // Safe unwrap
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
@@ -63,11 +81,11 @@ pub struct Offer {
     dealer: String,
     price: f64,
     cost_per_unit: f64,
-    min_amount: u32,
-    max_amount: u32,
+    unit: String,
     min_size: f64,
     max_size: f64,
-    unit: String,
+    min_amount: u32,
+    max_amount: u32,
     run_from: NaiveDate,
     run_till: NaiveDate,
 }
@@ -87,10 +105,16 @@ fn handle_favorites(
 ) -> bool {
     let mut changed = false;
     for favorite in to_add {
-        changed |= userdata.favorites.insert(dealer_from_string(favorite))
+        changed |= userdata.favorites.insert(
+            Dealer::from_str(favorite)
+                .expect("Was given a dealer name that does match a known dealer."),
+        )
     }
     for favorite in to_remove {
-        changed |= userdata.favorites.remove(&dealer_from_string(favorite))
+        changed |= userdata.favorites.remove(
+            &Dealer::from_str(favorite)
+                .expect("Was given a name that didn't match a known dealer."),
+        )
     }
     changed
 }
@@ -113,7 +137,7 @@ async fn handle_search(
             println!("No search term provided, not filtering offers...");
             offers = retrieve_offers(&mut userdata, favorites_changed).await;
         }
-        _ => panic!("shouldn't be possible"),
+        _ => unreachable!(),
     }
     offers.sort_by(|a, b| {
         (a.name.as_str(), a.dealer.as_str())
@@ -126,36 +150,62 @@ async fn handle_search(
 }
 
 async fn retrieve_offers(userdata: &mut UserData, favorites_changed: bool) -> Vec<Offer> {
-    let mut offers = vec![];
     let today = Utc::now().date_naive();
     if favorites_changed || today.signed_duration_since(userdata.rerun_date).num_days() > 0 {
-        for dealer in &userdata.favorites {
-            offers.append(
-                &mut retrieve_offers_from_remote(dealer)
-                    .await
-                    .expect("Failed to retrieve remote offers"),
-            );
-        }
-        cache_retrieved_offers(&offers, userdata).expect("Was unable to cache offers");
-    } else {
-        offers = retrieve_cached_offers().expect("Was unable to receive offers from cache");
+        return retrieve_offers_from_remote(userdata)
+            .await
+            .expect("was unable to retrieve remote offers");
     }
-    offers
+    retrieve_cached_offers(userdata)
+        .await
+        .expect("Was unable to receive offers from cache")
 }
 
-async fn retrieve_offers_from_remote(dealer: &Dealer) -> Option<Vec<Offer>> {
+async fn retrieve_offers_from_remote(userdata: &mut UserData) -> Option<Vec<Offer>> {
+    let mut offers = vec![];
+    for dealer in &userdata.favorites {
+        offers.append(
+            &mut remote_offers_for_dealer(dealer)
+                .await
+                .expect("Failed to retrieve remote offers for dealer"),
+        );
+    }
+    cache_retrieved_offers(&offers, userdata).expect("Was unable to cache offers");
+    Some(offers)
+}
+
+async fn remote_offers_for_dealer(dealer: &Dealer) -> Option<Vec<Offer>> {
     let client = Client::new();
     let catalogs = retrieve_catalogs_from_dealer(dealer, &client).await?;
+    // let futures_offers = catalogs
+    //     .into_iter()
+    //     .map(|catalog| retrieve_offers_from_catalog(catalog, &client));
+    // let offers = futures::future::join_all(futures_offers)
+    //     .await
+    //     .into_iter()
+    //     .flatten()
+    //     .flatten()
+    //     .collect();
+    let offers = futures::stream::iter(catalogs)
+        .map(|catalog| {
+            client
+                .get(format!(
+                    "https://squid-api.tjek.com/v2/catalogs/{}/hotspots",
+                    catalog.id.as_str()
+                ))
+                .header(CONTENT_TYPE, "application/json")
+                .header(ACCEPT, "application/json")
+                .send()
+        })
+        .filter_map(|res| async { res.await.ok() })
+        .filter_map(|offers_json| async { offers_json.json::<Vec<OfferWrapper>>().await.ok() })
+        .flat_map(|vec_wrapper| {
+            futures::stream::iter(vec_wrapper)
+                .map(|wrapper| deserialize_offer(wrapper, &format!("{:?}", dealer)))
+        })
+        .collect()
+        .await;
 
-    let futures_offers = catalogs
-        .into_iter()
-        .map(|catalog| retrieve_offers_from_catalog(catalog, &client));
-    let offers = futures::future::join_all(futures_offers)
-        .await
-        .into_iter()
-        .flatten()
-        .flatten()
-        .collect();
     Some(offers)
 }
 
@@ -173,16 +223,16 @@ fn cache_retrieved_offers(offers: &Vec<Offer>, userdata: &mut UserData) -> std::
         "./data/userdata.json",
         serde_json::to_string(userdata).unwrap(),
     )?;
-    println!("WRITTEN date");
+    println!("WRITTEN userdata");
     Ok(())
 }
 
-fn retrieve_cached_offers() -> Option<Vec<Offer>> {
-    // TODO Why can't I retrieve from subdir? such as ./data/cached_offers.json
-    serde_json::from_str(
-        &fs::read_to_string("data/offer_cache.json").expect("Cannot open file: cached_offers.json"),
-    )
-    .ok()
+async fn retrieve_cached_offers(userdata: &mut UserData) -> Option<Vec<Offer>> {
+    let offer_cache_str = match fs::read_to_string("data/offer_cache.json") {
+        Ok(cache) => cache,
+        Err(_) => return retrieve_offers_from_remote(userdata).await,
+    };
+    serde_json::from_str(&offer_cache_str).ok()
 }
 
 async fn retrieve_catalogs_from_dealer(dealer: &Dealer, client: &Client) -> Option<Vec<Catalog>> {
