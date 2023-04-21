@@ -1,6 +1,6 @@
 use chrono::{Days, NaiveDate, Utc};
 use clap::Parser;
-use futures::StreamExt;
+// use futures::StreamExt;
 use reqwest::{
     header::{ACCEPT, CONTENT_TYPE},
     Client, Response,
@@ -177,34 +177,34 @@ async fn retrieve_offers_from_remote(userdata: &mut UserData) -> Option<Vec<Offe
 async fn remote_offers_for_dealer(dealer: &Dealer) -> Option<Vec<Offer>> {
     let client = Client::new();
     let catalogs = retrieve_catalogs_from_dealer(dealer, &client).await?;
-    // let futures_offers = catalogs
-    //     .into_iter()
-    //     .map(|catalog| retrieve_offers_from_catalog(catalog, &client));
-    // let offers = futures::future::join_all(futures_offers)
-    //     .await
-    //     .into_iter()
-    //     .flatten()
-    //     .flatten()
-    //     .collect();
-    let offers = futures::stream::iter(catalogs)
-        .map(|catalog| {
-            client
-                .get(format!(
-                    "https://squid-api.tjek.com/v2/catalogs/{}/hotspots",
-                    catalog.id.as_str()
-                ))
-                .header(CONTENT_TYPE, "application/json")
-                .header(ACCEPT, "application/json")
-                .send()
-        })
-        .filter_map(|res| async { res.await.ok() })
-        .filter_map(|offers_json| async { offers_json.json::<Vec<OfferWrapper>>().await.ok() })
-        .flat_map(|vec_wrapper| {
-            futures::stream::iter(vec_wrapper)
-                .map(|wrapper| deserialize_offer(wrapper, &format!("{:?}", dealer)))
-        })
-        .collect()
-        .await;
+    let futures_offers = catalogs
+        .into_iter()
+        .map(|catalog| retrieve_offers_from_catalog(catalog, &client));
+    let offers = futures::future::join_all(futures_offers)
+        .await
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect();
+    // let offers = tokio_stream::iter(catalogs)
+    //     .map(|catalog| {
+    //         client
+    //             .get(format!(
+    //                 "https://squid-api.tjek.com/v2/catalogs/{}/hotspots",
+    //                 catalog.id.as_str()
+    //             ))
+    //             .header(CONTENT_TYPE, "application/json")
+    //             .header(ACCEPT, "application/json")
+    //             .send()
+    //     })
+    //     .filter_map(|res| async { res.await.ok() })
+    //     .filter_map(|offers_json| async { offers_json.json::<Vec<OfferWrapper>>().await.ok() })
+    //     .flat_map(|vec_wrapper| {
+    //         futures::stream::iter(vec_wrapper)
+    //             .map(|wrapper| deserialize_offer(wrapper, &format!("{:?}", dealer)))
+    //     })
+    //     .collect()
+    //     .await;
 
     Some(offers)
 }
