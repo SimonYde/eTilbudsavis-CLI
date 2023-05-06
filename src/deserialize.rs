@@ -6,11 +6,11 @@ where
     D: serde::de::Deserializer<'de>,
 {
     #[derive(Deserialize)]
-    struct Dealer {
+    struct Outer {
         name: String,
     }
 
-    let helper = Dealer::deserialize(deserializer)?;
+    let helper = Outer::deserialize(deserializer)?;
     Ok(helper.name)
 }
 

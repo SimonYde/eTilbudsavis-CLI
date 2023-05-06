@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use strum::EnumIter;
-#[derive(Hash, Debug, EnumIter, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Hash, Debug, EnumIter, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone, Copy,
+)]
 pub enum Dealer {
     Rema1000,
     Netto,
