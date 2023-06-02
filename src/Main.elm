@@ -39,6 +39,7 @@ update msg model =
             { model | count = model.count - 1 }
 
 
+main : Program () Model Msg
 main =
     Browser.sandbox
         { init = init

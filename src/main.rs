@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::str::FromStr;
 // use tokio_stream::StreamExt;
-// use strum::IntoEnumIterator;
+use strum::IntoEnumIterator;
 
 mod dealer;
 use crate::dealer::*;
@@ -57,7 +57,7 @@ struct UserData {
 impl Default for UserData {
     fn default() -> Self {
         println!(
-            "First run, or something modified userdata outside running of this program.\nReinitialising userdata with no favorites..."
+            "First run, or userdata was modified outside of running of this program.\nReinitialising userdata with no favorites..."
         );
         UserData {
             favorites: HashSet::new(),
@@ -80,7 +80,6 @@ pub struct Offer {
     run_from: NaiveDate,
     run_till: NaiveDate,
 }
-
 
 impl Default for Offer {
     fn default() -> Self {
@@ -131,8 +130,8 @@ fn handle_favorites(
             serde_json::to_string(userdata).unwrap(),
         )
         .unwrap();
+        println!("WRITTEN userdata");
     }
-    println!("WRITTEN userdata");
     changed
 }
 
@@ -146,13 +145,19 @@ async fn handle_search(
         1.. => {
             for search in search_items {
                 let mut temp = retrieve_offers(userdata, favorites_changed).await;
-                temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()));
+                if Dealer::iter()
+                    .filter(|d| *d == Dealer::from_str(&search).unwrap())
+                    .count()
+                    >= 1
+                {
+                    temp.retain(|offer| offer.dealer.to_lowercase() == search.to_lowercase());
+                } else {
+                    temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()));
+                }
                 offers.append(&mut temp);
             }
             offers.sort_by(|a, b| {
-                (a.name.as_str(), a.dealer.as_str())
-                    .partial_cmp(&(b.name.as_str(), b.dealer.as_str()))
-                    .expect("couldn't compare Offers in sorting")
+                (a.name.as_str(), a.dealer.as_str()).cmp(&(b.name.as_str(), b.dealer.as_str()))
             });
             offers.dedup();
         }
@@ -173,20 +178,20 @@ async fn retrieve_offers(userdata: &UserData, favorites_changed: bool) -> Vec<Of
             if favorites_changed || today > offers.first().unwrap_or(&Offer::default()).run_till {
                 return retrieve_offers_from_remote(userdata)
                     .await
-                    .unwrap_or(Vec::new());
+                    .unwrap_or_default();
             }
             offers
         }
         Err(_) => retrieve_offers_from_remote(userdata)
             .await
-            .unwrap_or(Vec::new()),
+            .unwrap_or_default(),
     }
 }
 
 async fn retrieve_offers_from_remote(userdata: &UserData) -> Option<Vec<Offer>> {
     let mut offers = Vec::new();
     for dealer in &userdata.favorites {
-        offers.append(&mut remote_offers_for_dealer(dealer).await.unwrap_or(Vec::new()));
+        offers.append(&mut remote_offers_for_dealer(dealer).await.unwrap_or_default());
     }
     cache_retrieved_offers(&mut offers).expect("Was unable to cache offers");
     Some(offers)
