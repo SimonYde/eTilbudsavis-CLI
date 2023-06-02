@@ -145,14 +145,13 @@ async fn handle_search(
         1.. => {
             for search in search_items {
                 let mut temp = retrieve_offers(userdata, favorites_changed).await;
-                if Dealer::iter()
-                    .filter(|d| *d == Dealer::from_str(&search).unwrap())
-                    .count()
-                    >= 1
-                {
-                    temp.retain(|offer| offer.dealer.to_lowercase() == search.to_lowercase());
-                } else {
-                    temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()));
+                match Dealer::from_str(&search) {
+                    Ok(_) => {
+                        temp.retain(|offer| offer.dealer.to_lowercase() == search.to_lowercase())
+                    }
+                    Err(_) => {
+                        temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()))
+                    }
                 }
                 offers.append(&mut temp);
             }
