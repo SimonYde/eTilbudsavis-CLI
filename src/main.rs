@@ -6,7 +6,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::str::FromStr;
 // use tokio_stream::StreamExt;
-use strum::IntoEnumIterator;
 
 mod dealer;
 use crate::dealer::*;
@@ -37,7 +36,6 @@ struct Args {
     remove_favorites: Vec<String>,
     #[arg(use_value_delimiter = true, value_delimiter = ',', short, long)]
     search: Vec<String>,
-
     #[arg(short, long)]
     print: bool,
 }
