@@ -75,7 +75,7 @@ viewItem offer =
         , th [] [ text (String.fromFloat offer.max_size) ]
         , th [] [ text (String.fromInt offer.min_amount) ]
         , th [] [ text (String.fromInt offer.max_amount) ]
-        , th [] [ text offer.run_from ]
+        , th [] [ text offer.run_from ]        
         , th [] [ text offer.run_till ]
         ]
 

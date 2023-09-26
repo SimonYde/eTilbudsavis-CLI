@@ -1,3 +1,8 @@
+mod dealer;
+mod deserialize;
+use dealer::*;
+use deserialize::*;
+
 use chrono::{NaiveDate, Utc};
 use clap::Parser;
 use reqwest::Client;
@@ -5,12 +10,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::str::FromStr;
-// use tokio_stream::StreamExt;
-
-mod dealer;
-use crate::dealer::*;
-mod deserialize;
-use crate::deserialize::*;
 
 #[tokio::main]
 async fn main() {
@@ -46,6 +45,7 @@ fn get_userdata() -> UserData {
         Err(_) => UserData::default(),
     }
 }
+
 
 #[derive(Serialize, Deserialize)]
 struct UserData {
