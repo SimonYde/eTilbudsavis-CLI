@@ -1,4 +1,4 @@
-use super::Offer;
+use crate::Offer;
 use serde::Deserialize;
 
 pub fn deserialize_dealer_name<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -62,7 +62,8 @@ struct SI {
     symbol: String,
     factor: f64,
 }
-pub fn deserialize_offer(offer_wrapper: OfferWrapper, dealer_name: &str) -> Offer {
+
+pub(crate) fn deserialize_offer(offer_wrapper: OfferWrapper, dealer_name: &str) -> Offer {
     let offer = &offer_wrapper.offer;
     let factor = &offer.quantity.unit.si.factor;
     let pieces = &offer.quantity.pieces;

@@ -1,6 +1,6 @@
 {
   description = "A basic flake with a shell";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   outputs = { self, nixpkgs, flake-utils }:
@@ -11,7 +11,6 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            gcc
             pkg-config
             openssl
             rustc
@@ -19,9 +18,6 @@
             rustfmt
             clippy
             rust-analyzer
-            elmPackages.elm
-            elmPackages.elm-format
-            elmPackages.elm-language-server
           ];
         };
       });
