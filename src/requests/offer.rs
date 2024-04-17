@@ -50,19 +50,23 @@ impl Default for Offer {
 }
 
 pub(crate) fn cache_retrieved_offers(userdata: &mut UserData, offers: &Vec<Offer>) -> Result<()> {
+    let path = dirs::cache_dir().unwrap().join("better_tilbudsavis");
+    std::fs::create_dir_all(path.clone())?;
     std::fs::write(
-        "./data/offer_cache.json",
+        path.join("offer_cache.json"),
         serde_json::to_string(offers).context("Failed to serialize offers to JSON")?,
     )
     .context("could not write offer cache")?;
     println!("WRITTEN offer cache");
-    userdata.time_of_last_cache = Utc::now().date_naive();
-    userdata.save();
+    userdata.cache_updated();
     Ok(())
 }
 
 pub(crate) fn retrieve_cached_offers() -> Result<Vec<Offer>> {
-    let offer_cache_str = &match std::fs::read_to_string("./data/offer_cache.json") {
+    let path = dirs::cache_dir()
+        .unwrap()
+        .join("better_tilbudsavis/offer_cache.json");
+    let offer_cache_str = &match std::fs::read_to_string(path) {
         Ok(cache) => cache,
         Err(err) => err.to_string(),
     };

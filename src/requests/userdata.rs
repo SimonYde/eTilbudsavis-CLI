@@ -6,26 +6,41 @@ use serde::{Deserialize, Serialize};
 use super::dealer::Dealer;
 
 pub(crate) fn get_userdata() -> UserData {
-    match std::fs::read_to_string("./data/userdata.json") {
+    let path = dirs::cache_dir()
+        .unwrap()
+        .join("better_tilbudsavis/userdata.json");
+    match std::fs::read_to_string(path) {
         Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
-        Err(_) => UserData::default(),
+        Err(err) => {
+            eprintln!("{}", err);
+            UserData::default()
+        }
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct UserData {
     pub(crate) favorites: HashSet<Dealer>,
-    pub(crate) time_of_last_cache: NaiveDate,
+    date_of_last_cache: NaiveDate,
 }
 
 impl UserData {
     pub(crate) fn save(&self) {
-        std::fs::write("./data/userdata.json", serde_json::to_string(&self).unwrap()).unwrap();
+        let path = dirs::cache_dir().unwrap().join("better_tilbudsavis");
+        std::fs::create_dir_all(path.clone()).unwrap();
+        std::fs::write(
+            path.join("userdata.json"),
+            serde_json::to_string(&self).unwrap(),
+        )
+        .unwrap();
     }
     pub(crate) fn should_update_cache(&self) -> bool {
-        self.time_of_last_cache < Utc::now().date_naive()
+        self.date_of_last_cache < Utc::now().date_naive()
     }
-
+    pub(crate) fn cache_updated(&mut self) {
+        self.date_of_last_cache = Utc::now().date_naive();
+        self.save();
+    }
 }
 
 impl Default for UserData {
@@ -34,7 +49,7 @@ impl Default for UserData {
         println!("Reinitialising userdata with no favorites...");
         UserData {
             favorites: HashSet::new(),
-            time_of_last_cache: Utc.timestamp_millis_opt(0).unwrap().date_naive(),
+            date_of_last_cache: Utc.timestamp_millis_opt(0).unwrap().date_naive(),
         }
     }
 }
