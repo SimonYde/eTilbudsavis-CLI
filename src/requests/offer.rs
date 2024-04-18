@@ -1,12 +1,13 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{NaiveDate, Utc};
+use comfy_table::{Cell, CellAlignment};
 use serde::{Deserialize, Serialize};
 
 use super::userdata::UserData;
 
 #[derive(Debug, Deserialize, Serialize, PartialOrd)]
 pub(crate) struct Offer {
-    // id: String,
+    pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) dealer: String,
     pub(crate) price: f64,
@@ -22,10 +23,11 @@ pub(crate) struct Offer {
 
 impl PartialEq for Offer {
     fn eq(&self, other: &Self) -> bool {
-        self.dealer == other.dealer
-            && self.name == other.name
-            && self.run_from == other.run_from
-            && self.run_till == other.run_till
+        self.id == other.id
+            || (self.dealer == other.dealer
+                && self.name == other.name
+                && self.run_from == other.run_from
+                && self.run_till == other.run_till)
     }
 }
 
@@ -34,6 +36,7 @@ impl Eq for Offer {}
 impl Default for Offer {
     fn default() -> Self {
         Offer {
+            id: String::default(),
             name: String::default(),
             dealer: String::default(),
             price: f64::default(),
@@ -49,28 +52,41 @@ impl Default for Offer {
     }
 }
 
-pub(crate) fn cache_retrieved_offers(userdata: &mut UserData, offers: &Vec<Offer>) -> Result<()> {
-    let path = dirs::cache_dir().unwrap().join("better_tilbudsavis");
-    std::fs::create_dir_all(path.clone())?;
-    std::fs::write(
-        path.join("offer_cache.json"),
-        serde_json::to_string(offers).context("Failed to serialize offers to JSON")?,
-    )
-    .context("could not write offer cache")?;
-    println!("WRITTEN offer cache");
-    userdata.cache_updated();
-    Ok(())
+impl std::fmt::Display for Offer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let offer_str = format!(
+            "{} - {}: {} - {}: {} kr. - {:.2} kr/{}",
+            self.run_from.format("%d/%m"),
+            self.run_till.format("%d/%m"),
+            self.dealer,
+            self.name,
+            self.price,
+            self.cost_per_unit,
+            self.unit
+        );
+        write!(f, "{}", offer_str)?;
+        Ok(())
+    }
 }
 
-pub(crate) fn retrieve_cached_offers() -> Result<Vec<Offer>> {
-    let path = dirs::cache_dir()
-        .unwrap()
-        .join("better_tilbudsavis/offer_cache.json");
-    let offer_cache_str = &match std::fs::read_to_string(path) {
-        Ok(cache) => cache,
-        Err(err) => err.to_string(),
-    };
-    serde_json::from_str(offer_cache_str).context("Offer cache has invalid JSON")
+impl Offer {
+    pub(crate) fn to_table_entry(&self) -> Vec<Cell> {
+        let period = format!(
+            "{} - {}",
+            self.run_from.format("%d/%m"),
+            self.run_till.format("%d/%m")
+        );
+        let cost_per_unit = format!("{:.2} kr/{}", self.cost_per_unit, self.unit);
+        let price = format!("{:.2} kr", self.price);
+
+        vec![
+            Cell::new(period).set_alignment(CellAlignment::Center),
+            Cell::new(self.dealer.to_string()),
+            Cell::new(self.name.to_string()),
+            Cell::new(price).set_alignment(CellAlignment::Right),
+            Cell::new(cost_per_unit).set_alignment(CellAlignment::Right),
+        ]
+    }
 }
 
 pub(crate) async fn retrieve_offers(
@@ -78,25 +94,51 @@ pub(crate) async fn retrieve_offers(
     favorites_changed: bool,
 ) -> Vec<Offer> {
     match retrieve_cached_offers() {
-        Ok(offers) => {
+        Ok(cached_offers) => {
             let cache_outdated = userdata.should_update_cache();
             if favorites_changed || cache_outdated {
                 let offers = retrieve_offers_from_remote(userdata).await;
-                cache_retrieved_offers(userdata, &offers)
-                    .expect("Should be able to write cache to file");
-                return offers;
+                if let Err(err) = cache_retrieved_offers(userdata, &offers) {
+                    eprintln!("{err}");
+                }
+                offers
+            } else {
+                cached_offers
             }
-            offers
         }
         Err(_) => {
             let offers = retrieve_offers_from_remote(userdata).await;
-            cache_retrieved_offers(userdata, &offers).unwrap();
+            if let Err(err) = cache_retrieved_offers(userdata, &offers) {
+                eprintln!("{err}");
+            }
             offers
         }
     }
 }
 
-pub(crate) async fn retrieve_offers_from_remote(userdata: &mut UserData) -> Vec<Offer> {
+fn cache_retrieved_offers(userdata: &mut UserData, offers: &Vec<Offer>) -> Result<()> {
+    let path = dirs::cache_dir()
+        .ok_or(anyhow!("Could not find cache dir"))?
+        .join("better_tilbudsavis");
+    std::fs::create_dir_all(path.clone())?;
+    std::fs::write(
+        path.join("offer_cache.json"),
+        serde_json::to_string(offers).context("Failed to serialize offers to JSON")?,
+    )
+    .context("could not write offer cache")?;
+    userdata.cache_updated();
+    Ok(())
+}
+
+fn retrieve_cached_offers() -> Result<Vec<Offer>> {
+    let path = dirs::cache_dir()
+        .ok_or(anyhow!("Could not find cache dir"))?
+        .join("better_tilbudsavis/offer_cache.json");
+    let offer_cache_str = std::fs::read_to_string(path).context("Offer cache not found")?;
+    serde_json::from_str(&offer_cache_str).context("Offer cache has invalid JSON")
+}
+
+async fn retrieve_offers_from_remote(userdata: &mut UserData) -> Vec<Offer> {
     futures::future::join_all(
         userdata
             .favorites

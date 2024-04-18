@@ -11,8 +11,8 @@ pub(crate) fn get_userdata() -> UserData {
         .join("better_tilbudsavis/userdata.json");
     match std::fs::read_to_string(path) {
         Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
-        Err(err) => {
-            eprintln!("{}", err);
+        Err(_) => {
+            // eprintln!("{}", err);
             UserData::default()
         }
     }

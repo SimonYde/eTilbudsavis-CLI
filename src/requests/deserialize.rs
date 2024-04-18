@@ -20,6 +20,7 @@ pub struct OfferWrapper {
 }
 #[derive(Deserialize)]
 struct Outer {
+    id: String,
     #[serde(rename = "heading")]
     name: String,
     pricing: Pricing,
@@ -69,6 +70,7 @@ pub(crate) fn deserialize_offer(offer_wrapper: OfferWrapper, dealer_name: &str) 
     let pieces = &offer.quantity.pieces;
     let size = &offer.quantity.size;
     Offer {
+        id: offer.id.to_owned(),
         name: offer.name.to_owned(),
         price: offer.pricing.price,
         min_amount: pieces.from,

@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Context, Result};
-use clap::ValueEnum;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -21,7 +20,7 @@ use super::{
     Ord,
     Clone,
     Copy,
-    ValueEnum,
+    // ValueEnum,
 )]
 pub enum Dealer {
     Rema1000,
@@ -39,15 +38,8 @@ pub enum Dealer {
     Spar,
 }
 
-#[derive(Deserialize)]
-struct Catalog {
-    id: String,
-    #[serde(deserialize_with = "deserialize_dealer_name")]
-    dealer: String,
-}
-
 impl Dealer {
-    pub(crate) fn id(&self) -> &'static str {
+    fn id(&self) -> &'static str {
         match self {
             Dealer::Rema1000 => "11deC",
             Dealer::Netto => "9ba51",
@@ -65,10 +57,16 @@ impl Dealer {
         }
     }
     pub(crate) fn list_known_dealers() {
-        println!("Known Dealers:");
-        for d in Dealer::iter() {
-            println!(" - {:?}", d);
+        let mut table = comfy_table::Table::new();
+
+        table
+            .load_preset(comfy_table::presets::UTF8_FULL)
+            .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+            .set_header(vec!["Dealers"]);
+        for dealer in Dealer::iter() {
+            table.add_row(vec![dealer.to_string()]);
         }
+        println!("{table}");
     }
     pub(crate) async fn remote_offers_for_dealer(&self) -> Vec<Offer> {
         let client = Client::new();
@@ -85,6 +83,12 @@ impl Dealer {
             .flatten()
             .flatten()
             .collect()
+    }
+}
+
+impl std::fmt::Display for Dealer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -106,10 +110,17 @@ impl FromStr for Dealer {
             "kvickly" => Dealer::Kvickly,
             "daglibrugsen" | "dagli'brugsen" => Dealer::DagliBrugsen,
             "superbrugsen" => Dealer::SuperBrugsen,
-            _ => return Err(anyhow!("Unknown dealer: {}", s)),
+            _ => return Err(anyhow!("Unknown dealer: {}.\nSee `dealers` for available dealers.", s)),
         };
         Ok(value)
     }
+}
+
+#[derive(Deserialize)]
+struct Catalog {
+    id: String,
+    #[serde(deserialize_with = "deserialize_dealer_name")]
+    dealer: String,
 }
 
 async fn retrieve_catalogs_from_dealer(dealer: &Dealer, client: &Client) -> Result<Vec<Catalog>> {
