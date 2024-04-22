@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use futures::future;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -20,6 +21,7 @@ use super::{
     Ord,
     Clone,
     Copy,
+    Default,
     // ValueEnum,
 )]
 pub enum Dealer {
@@ -35,6 +37,7 @@ pub enum Dealer {
     Lidl,
     Meny,
     Kvickly,
+    #[default]
     Spar,
 }
 
@@ -73,13 +76,19 @@ impl Dealer {
         let catalogs = retrieve_catalogs_from_dealer(self, &client)
             .await
             .unwrap_or_default();
-        let futures_offers = catalogs
+        let tasks: Vec<_> = catalogs
             .into_iter()
-            .map(|catalog| retrieve_offers_from_catalog(catalog, &client));
+            .map(|catalog| {
+                let catalog = catalog.clone();
+                let client = client.clone();
+                tokio::spawn(async move { retrieve_offers_from_catalog(catalog, &client).await })
+            })
+            .collect();
 
-        futures::future::join_all(futures_offers)
+        future::join_all(tasks)
             .await
             .into_iter()
+            .flatten()
             .flatten()
             .flatten()
             .collect()
@@ -88,7 +97,7 @@ impl Dealer {
 
 impl std::fmt::Display for Dealer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -96,11 +105,11 @@ impl FromStr for Dealer {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value = match s.trim().to_lowercase().as_str() {
+        let value = match s.to_lowercase().trim() {
             "bilka" => Dealer::Bilka,
             "coop365" => Dealer::Coop365,
             "lidl" => Dealer::Lidl,
-            "rema1000" => Dealer::Rema1000,
+            "rema1000" | "rema 1000" => Dealer::Rema1000,
             "spar" => Dealer::Spar,
             "meny" => Dealer::Meny,
             "føtex" => Dealer::Føtex,
@@ -110,13 +119,17 @@ impl FromStr for Dealer {
             "kvickly" => Dealer::Kvickly,
             "daglibrugsen" | "dagli'brugsen" => Dealer::DagliBrugsen,
             "superbrugsen" => Dealer::SuperBrugsen,
-            _ => return Err(anyhow!("Unknown dealer: {}.\nSee `dealers` for available dealers.", s)),
+            _ => {
+                return Err(anyhow!(
+                    "Unknown dealer: {s}.\nSee `dealers` for available dealers."
+                ))
+            }
         };
         Ok(value)
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Catalog {
     id: String,
     #[serde(deserialize_with = "deserialize_dealer_name")]

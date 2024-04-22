@@ -1,15 +1,16 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::{NaiveDate, Utc};
 use comfy_table::{Cell, CellAlignment};
+use futures::future;
 use serde::{Deserialize, Serialize};
 
-use super::userdata::UserData;
+use super::{dealer::Dealer, userdata::UserData};
 
 #[derive(Debug, Deserialize, Serialize, PartialOrd)]
 pub(crate) struct Offer {
     pub(crate) id: String,
     pub(crate) name: String,
-    pub(crate) dealer: String,
+    pub(crate) dealer: Dealer,
     pub(crate) price: f64,
     pub(crate) cost_per_unit: f64,
     pub(crate) unit: String,
@@ -38,7 +39,7 @@ impl Default for Offer {
         Offer {
             id: String::default(),
             name: String::default(),
-            dealer: String::default(),
+            dealer: Dealer::default(),
             price: f64::default(),
             cost_per_unit: f64::default(),
             unit: String::default(),
@@ -71,20 +72,49 @@ impl std::fmt::Display for Offer {
 
 impl Offer {
     pub(crate) fn to_table_entry(&self) -> Vec<Cell> {
+        let unit = &self.unit;
         let period = format!(
-            "{} - {}",
+            "{}\n  ↓  \n{}",
             self.run_from.format("%d/%m"),
             self.run_till.format("%d/%m")
         );
-        let cost_per_unit = format!("{:.2} kr/{}", self.cost_per_unit, self.unit);
+        let cost_per_unit = format!("{:.2} kr/{}", self.cost_per_unit, unit);
         let price = format!("{:.2} kr", self.price);
+        let count = if self.min_amount == self.max_amount {
+            format!("{}", self.min_amount)
+        } else {
+            format!("{}-{}", self.min_amount, self.max_amount)
+        };
+
+        let min_size_is_decimal = self.min_size - self.min_size.trunc() > 0.01;
+        let max_size_is_decimal = self.max_size - self.max_size.trunc() > 0.01;
+        let max_size_equals_min_size = self.max_size - self.min_size < 0.001;
+
+        let min_size = if min_size_is_decimal {
+            format!("{:.3}", self.min_size)
+        } else {
+            format!("{}", self.min_size)
+        };
+        let max_size = if max_size_is_decimal {
+            format!("{:.3}", self.max_size)
+        } else {
+            format!("{}", self.max_size)
+        };
+
+        let weight = if max_size_equals_min_size {
+            format!("{} {}", min_size, unit)
+        } else {
+            format!("{}-{} {}", min_size, max_size, unit)
+        };
 
         vec![
-            Cell::new(period).set_alignment(CellAlignment::Center),
+            Cell::new(period),
             Cell::new(self.dealer.to_string()),
             Cell::new(self.name.to_string()),
+            Cell::new(count),
             Cell::new(price).set_alignment(CellAlignment::Right),
             Cell::new(cost_per_unit).set_alignment(CellAlignment::Right),
+            Cell::new(weight).set_alignment(CellAlignment::Right),
         ]
     }
 }
@@ -139,14 +169,19 @@ fn retrieve_cached_offers() -> Result<Vec<Offer>> {
 }
 
 async fn retrieve_offers_from_remote(userdata: &mut UserData) -> Vec<Offer> {
-    futures::future::join_all(
-        userdata
-            .favorites
-            .iter()
-            .map(|dealer| dealer.remote_offers_for_dealer()),
-    )
-    .await
-    .into_iter()
-    .flatten()
-    .collect()
+    let tasks: Vec<_> = userdata
+        .favorites
+        .iter()
+        .map(|dealer| {
+            let dealer = *dealer;
+            tokio::spawn(async move { dealer.remote_offers_for_dealer().await })
+        })
+        .collect();
+
+    future::join_all(tasks)
+        .await
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect()
 }

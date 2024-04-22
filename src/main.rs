@@ -1,6 +1,6 @@
 mod requests;
-use clap::{Parser, Subcommand};
-use comfy_table::Table;
+use clap::{Args, Parser, Subcommand};
+use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
 
 use crate::requests::{
     dealer::Dealer,
@@ -22,19 +22,19 @@ async fn run(args: Cli) {
     let mut userdata = userdata::get_userdata();
 
     let favorites_changed = match args.favorites {
-        Some(FavoriteCommands::Add { dealers }) => add_favorites(&mut userdata, &dealers),
-        Some(FavoriteCommands::Remove { dealers }) => remove_favorites(&mut userdata, &dealers),
+        Some(FavoriteCommands::Add { dealers }) => userdata.add_favorites(&dealers),
+        Some(FavoriteCommands::Remove { dealers }) => userdata.remove_favorites(&dealers),
         Some(FavoriteCommands::Dealers) => {
             Dealer::list_known_dealers();
             exit(0);
         }
         Some(FavoriteCommands::Favorites) => {
             let mut table = Table::new();
-            table.load_preset(comfy_table::presets::UTF8_FULL);
-            table.apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS);
+            table.load_preset(UTF8_FULL);
+            table.apply_modifier(UTF8_ROUND_CORNERS);
             table.set_header(vec!["Favorites"]);
             for favorite in userdata.favorites.iter() {
-                table.add_row(vec![format!("{:?}", favorite)]);
+                table.add_row(vec![favorite]);
             }
             println!("{}", table);
             exit(0);
@@ -42,16 +42,26 @@ async fn run(args: Cli) {
         None => false,
     };
 
-    let mut offers = handle_search(&mut userdata, &args.search, favorites_changed).await;
+    let mut offers =
+        handle_search(&mut userdata, &args.search, favorites_changed, args.dealer).await;
     offers.sort_unstable_by(|a, b| a.cost_per_unit.total_cmp(&b.cost_per_unit).reverse());
 
     let mut table = Table::new();
     table
-        .load_preset(comfy_table::presets::UTF8_FULL)
-        .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
-        .set_content_arrangement(comfy_table::ContentArrangement::Dynamic)
+        .load_preset(UTF8_FULL)
+        .apply_modifier(UTF8_ROUND_CORNERS)
+        .set_content_arrangement(ContentArrangement::Dynamic)
         .set_width(100)
-        .set_header(vec!["Period", "Dealer", "Product", "Cost", "Cost/unit"]);
+        .set_header(vec![
+            "Period",
+            "Dealer",
+            "Product",
+            "Count",
+            "Price",
+            "Cost/unit",
+            "Weight",
+        ]);
+
     match (args.json, args.print) {
         (true, true) => {
             println!("`json` and other options are mutually exclusive");
@@ -90,8 +100,17 @@ pub(crate) struct Cli {
     /// Output offers as JSON (cannot be combined with other options)
     #[arg(short, long)]
     json: bool,
+
+    /// Search by dealer
+    #[arg(short)]
+    dealer: bool,
     #[command(subcommand)]
     favorites: Option<FavoriteCommands>,
+}
+
+#[derive(Args, Debug)]
+struct ByDealer {
+    dealer: Dealer,
 }
 
 #[derive(Subcommand, Debug)]
@@ -107,39 +126,26 @@ enum FavoriteCommands {
     Favorites,
 }
 
-fn add_favorites(userdata: &mut UserData, dealers: &[Dealer]) -> bool {
-    let mut changed = false;
-    for dealer in dealers {
-        changed |= userdata.favorites.insert(*dealer)
-    }
-    changed
-}
-
-fn remove_favorites(userdata: &mut UserData, dealers: &[Dealer]) -> bool {
-    let mut changed = false;
-    for dealer in dealers {
-        changed |= userdata.favorites.remove(dealer)
-    }
-    changed
-}
-
 async fn handle_search(
     userdata: &mut UserData,
     search_items: &Vec<String>,
     favorites_changed: bool,
+    search_by_dealer: bool,
 ) -> Vec<Offer> {
     let mut offers = Vec::new();
     match search_items.len() {
         1.. => {
             for search in search_items {
                 let mut temp = retrieve_offers(userdata, favorites_changed).await;
-                match Dealer::from_str(search) {
-                    Ok(_) => {
-                        temp.retain(|offer| offer.dealer.to_lowercase() == search.to_lowercase())
+                if search_by_dealer {
+                    if let Ok(dealer) = Dealer::from_str(search) {
+                        temp.retain(|offer| offer.dealer == dealer);
+                    } else {
+                        println!("Search term did not match any known dealers: {search}");
+                        Dealer::list_known_dealers();
                     }
-                    Err(_) => {
-                        temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()))
-                    }
+                } else {
+                    temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()))
                 }
                 offers.append(&mut temp);
             }
