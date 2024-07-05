@@ -1,8 +1,8 @@
-# Better Tilbudsavis
-## A Better way to receive grocery discounts
+# eTilbudsavis CLI
+## A command-line interface for the [etilbudsavis.com](https://www.etilbudsavis.com) website.
 
 Todo:
-- [ ] tables
+- [x] tables
 - [ ] webserver
 - [ ] json to tables?
 - [ ] config files?
