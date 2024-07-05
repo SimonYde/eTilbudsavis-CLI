@@ -1,3 +1,4 @@
+use anyhow::Context;
 use chrono::{NaiveDate, TimeZone, Utc};
 use std::collections::HashSet;
 
@@ -8,7 +9,7 @@ use super::dealer::Dealer;
 pub(crate) fn get_userdata() -> UserData {
     let path = dirs::cache_dir()
         .unwrap()
-        .join("better_tilbudsavis/userdata.json");
+        .join("etilbudsavis-cli/userdata.json");
     match std::fs::read_to_string(path) {
         Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
         Err(_) => UserData::default(),
@@ -24,8 +25,8 @@ pub(crate) struct UserData {
 impl UserData {
     pub(crate) fn save(&self) -> anyhow::Result<()> {
         let path = dirs::cache_dir()
-            .ok_or(anyhow::anyhow!("Failed to get cache dir"))?
-            .join("better_tilbudsavis");
+            .context("Could not find cache dir")?
+            .join("etilbudsavis-cli");
         std::fs::create_dir_all(path.clone())?;
         std::fs::write(path.join("userdata.json"), serde_json::to_string(&self)?)?;
         Ok(())
@@ -44,8 +45,8 @@ impl UserData {
 
     pub(crate) fn add_favorites(&mut self, dealers: &[Dealer]) -> bool {
         let mut changed = false;
-        for dealer in dealers {
-            changed |= self.favorites.insert(*dealer)
+        for &dealer in dealers {
+            changed |= self.favorites.insert(dealer)
         }
         changed
     }

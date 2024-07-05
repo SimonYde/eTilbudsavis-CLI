@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{NaiveDate, Utc};
 use comfy_table::{Cell, CellAlignment};
 use futures::future;
@@ -148,8 +148,8 @@ pub(crate) async fn retrieve_offers(
 
 fn cache_retrieved_offers(userdata: &mut UserData, offers: &Vec<Offer>) -> Result<()> {
     let path = dirs::cache_dir()
-        .ok_or(anyhow!("Could not find cache dir"))?
-        .join("better_tilbudsavis");
+        .context("Could not find cache dir")?
+        .join("etilbudsavis-cli");
     std::fs::create_dir_all(path.clone())?;
     std::fs::write(
         path.join("offer_cache.json"),
@@ -162,8 +162,8 @@ fn cache_retrieved_offers(userdata: &mut UserData, offers: &Vec<Offer>) -> Resul
 
 fn retrieve_cached_offers() -> Result<Vec<Offer>> {
     let path = dirs::cache_dir()
-        .ok_or(anyhow!("Could not find cache dir"))?
-        .join("better_tilbudsavis/offer_cache.json");
+        .context("Could not find cache dir")?
+        .join("etilbudsavis-cli/offer_cache.json");
     let offer_cache_str = std::fs::read_to_string(path).context("Offer cache not found")?;
     serde_json::from_str(&offer_cache_str).context("Offer cache has invalid JSON")
 }

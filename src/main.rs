@@ -1,5 +1,5 @@
 mod requests;
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
 
 use crate::requests::{
@@ -8,7 +8,7 @@ use crate::requests::{
     userdata,
     userdata::UserData,
 };
-use std::{process::exit, str::FromStr};
+use std::{borrow::Cow, process::exit, str::FromStr};
 
 #[tokio::main]
 async fn main() {
@@ -33,7 +33,7 @@ async fn run(args: Cli) {
             table.load_preset(UTF8_FULL);
             table.apply_modifier(UTF8_ROUND_CORNERS);
             table.set_header(vec!["Favorites"]);
-            for favorite in userdata.favorites.iter() {
+            for favorite in userdata.favorites {
                 table.add_row(vec![favorite]);
             }
             println!("{}", table);
@@ -92,8 +92,8 @@ async fn run(args: Cli) {
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A CLI interface for the eTilbudsavis API.", long_about = None)]
-pub(crate) struct Cli {
-    search: Vec<String>,
+struct Cli {
+    search: Vec<Cow<'static, str>>,
     #[arg(short, long, default_value_t = false)]
     /// Always print offers
     print: bool,
@@ -106,11 +106,6 @@ pub(crate) struct Cli {
     dealer: bool,
     #[command(subcommand)]
     favorites: Option<FavoriteCommands>,
-}
-
-#[derive(Args, Debug)]
-struct ByDealer {
-    dealer: Dealer,
 }
 
 #[derive(Subcommand, Debug)]
@@ -128,33 +123,30 @@ enum FavoriteCommands {
 
 async fn handle_search(
     userdata: &mut UserData,
-    search_items: &Vec<String>,
+    search_items: &Vec<Cow<'_, str>>,
     favorites_changed: bool,
     search_by_dealer: bool,
 ) -> Vec<Offer> {
-    let mut offers = Vec::new();
-    match search_items.len() {
-        1.. => {
-            for search in search_items {
-                let mut temp = retrieve_offers(userdata, favorites_changed).await;
-                if search_by_dealer {
-                    if let Ok(dealer) = Dealer::from_str(search) {
-                        temp.retain(|offer| offer.dealer == dealer);
-                    } else {
-                        println!("Search term did not match any known dealers: {search}");
-                        Dealer::list_known_dealers();
-                    }
+    if !search_items.is_empty() {
+        let mut offers = Vec::new();
+        for search in search_items {
+            let mut temp = retrieve_offers(userdata, favorites_changed).await;
+            if search_by_dealer {
+                if let Ok(dealer) = Dealer::from_str(search) {
+                    temp.retain(|offer| offer.dealer == dealer);
                 } else {
-                    temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()))
+                    println!("Search term did not match any known dealers: {search}");
+                    Dealer::list_known_dealers();
                 }
-                offers.append(&mut temp);
+            } else {
+                temp.retain(|offer| offer.name.to_lowercase().contains(search.trim()))
             }
-            offers.sort_unstable_by(|a, b| (&a.name, &a.dealer).cmp(&(&b.name, &b.dealer)));
-            offers.dedup();
+            offers.extend(temp);
         }
-        0 => {
-            offers = retrieve_offers(userdata, favorites_changed).await;
-        }
+        offers.sort_unstable_by(|a, b| (&a.name, &a.dealer).cmp(&(&b.name, &b.dealer)));
+        offers.dedup();
+        offers
+    } else {
+        retrieve_offers(userdata, favorites_changed).await
     }
-    offers
 }

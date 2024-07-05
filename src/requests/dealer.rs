@@ -165,11 +165,9 @@ async fn retrieve_offers_from_catalog(catalog: Catalog, client: &Client) -> Resu
             catalog.id.as_str()
         ))
         .send()
-        .await
-        .context("could not fetch offers")?
+        .await?
         .json::<Vec<OfferWrapper>>()
-        .await
-        .context("could not deserialize offers")?
+        .await?
         .into_iter()
         .map(|ow| deserialize_offer(ow, &catalog.dealer))
         .collect();
