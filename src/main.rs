@@ -1,6 +1,7 @@
 mod requests;
-use clap::{Parser, Subcommand};
-use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
+mod output;
+use clap::{Parser, Subcommand, ValueEnum};
+use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Table};
 
 use crate::requests::{
     dealer::Dealer,
@@ -46,66 +47,37 @@ async fn run(args: Cli) {
         handle_search(&mut userdata, &args.search, favorites_changed, args.dealer).await;
     offers.sort_unstable_by(|a, b| a.cost_per_unit.total_cmp(&b.cost_per_unit).reverse());
 
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .apply_modifier(UTF8_ROUND_CORNERS)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(100)
-        .set_header(vec![
-            "Period",
-            "Dealer",
-            "Product",
-            "Count",
-            "Price",
-            "Cost/unit",
-            "Weight",
-        ]);
-
-    match (args.json, args.print) {
-        (true, true) => {
-            println!("`json` and other options are mutually exclusive");
-            exit(1);
-        }
-        (true, false) => {
-            println!("{}", serde_json::to_string(&offers).expect("dude what?"));
-        }
-        (false, true) => {
-            for offer in offers.iter() {
-                table.add_row(offer.to_table_entry());
-            }
-            println!("{}", table);
-            println!("Amount of offers: {}", offers.len());
-        }
-        (false, false) if !args.search.is_empty() => {
-            for offer in offers.iter() {
-                table.add_row(offer.to_table_entry());
-            }
-            println!("{}", table);
-            println!("Amount of offers: {}", offers.len());
-        }
-        (false, false) => {
-            println!("Amount of offers: {}", offers.len());
-        }
+    match args.format {
+        Some(format) => output::print_offers(&offers, &format),
+        None => println!("Amount of offers: {}", offers.len()),
     }
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "A CLI interface for the eTilbudsavis API.", long_about = None)]
+#[command(
+    author, version, about = "A CLI interface for the eTilbudsavis API.", long_about = None
+)]
 struct Cli {
     search: Vec<Cow<'static, str>>,
-    #[arg(short, long, default_value_t = false)]
-    /// Always print offers
-    print: bool,
-    /// Output offers as JSON (cannot be combined with other options)
+
+    /// Format to print offers in
     #[arg(short, long)]
-    json: bool,
+    format: Option<OutputFormat>,
 
     /// Search by dealer
     #[arg(short)]
     dealer: bool,
+
     #[command(subcommand)]
     favorites: Option<FavoriteCommands>,
+}
+
+/// Format to print offers in
+#[derive(Debug, ValueEnum, Clone)]
+pub enum OutputFormat {
+    Json,
+    Rss,
+    Table,
 }
 
 #[derive(Subcommand, Debug)]
