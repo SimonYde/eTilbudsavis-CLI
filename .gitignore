@@ -1,5 +1,2 @@
 /target
-*.json
-elm-stuff
-index.html
-main.js
+.pre-commit-config.yaml

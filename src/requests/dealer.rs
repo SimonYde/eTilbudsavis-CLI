@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use futures::future;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -6,9 +6,11 @@ use std::str::FromStr;
 use strum::{EnumIter, IntoEnumIterator};
 
 use super::{
-    deserialize::{deserialize_dealer_name, deserialize_offer, OfferWrapper},
+    deserialize::{OfferWrapper, deserialize_dealer_name, deserialize_offer},
     offer::Offer,
 };
+use crate::OutputFormat;
+
 #[derive(
     Hash,
     Debug,
@@ -22,7 +24,6 @@ use super::{
     Clone,
     Copy,
     Default,
-    // ValueEnum,
 )]
 pub enum Dealer {
     Rema1000,
@@ -37,8 +38,9 @@ pub enum Dealer {
     Lidl,
     Meny,
     Kvickly,
-    #[default]
     Spar,
+    #[default]
+    Unknown,
 }
 
 impl Dealer {
@@ -57,20 +59,31 @@ impl Dealer {
             Dealer::Kvickly => "c1edq",
             Dealer::Spar => "88ddE",
             Dealer::SuperBrugsen => "0b1e8",
+            Dealer::Unknown => "???",
         }
     }
-    pub(crate) fn list_known_dealers() {
-        let mut table = comfy_table::Table::new();
+    pub(crate) fn list_known_dealers(format: Option<OutputFormat>) {
+        let format = format.unwrap_or(OutputFormat::Table);
+        match format {
+            OutputFormat::Json => todo!(),
+            OutputFormat::Rss => (),
+            OutputFormat::Table => {
+                let mut table = comfy_table::Table::new();
 
-        table
-            .load_preset(comfy_table::presets::UTF8_FULL)
-            .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
-            .set_header(vec!["Dealers"]);
-        for dealer in Dealer::iter() {
-            table.add_row(vec![dealer.to_string()]);
+                table
+                    .load_preset(comfy_table::presets::UTF8_FULL)
+                    .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+                    .set_header(vec!["Dealers"]);
+
+                for dealer in Dealer::iter() {
+                    table.add_row(vec![dealer.to_string()]);
+                }
+
+                println!("{table}");
+            }
         }
-        println!("{table}");
     }
+
     pub(crate) async fn remote_offers_for_dealer(&self) -> Vec<Offer> {
         let client = Client::new();
         let catalogs = retrieve_catalogs_from_dealer(self, &client)
@@ -122,7 +135,7 @@ impl FromStr for Dealer {
             _ => {
                 return Err(anyhow!(
                     "Unknown dealer: {s}.\nSee `dealers` for available dealers."
-                ))
+                ));
             }
         };
         Ok(value)

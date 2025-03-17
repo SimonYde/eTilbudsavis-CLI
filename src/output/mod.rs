@@ -1,14 +1,14 @@
 mod rss;
 
 use crate::{Offer, OutputFormat};
-use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
 
 /// Print offers in the specified format
-pub fn print_offers(offers: &[Offer], format: &OutputFormat) {
+pub fn print_offers(offers: &[&Offer], format: &OutputFormat) {
     match format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string(offers).expect("dude what?"));
-        },
+            println!("{}", serde_json::to_string(&offers).expect("dude what?"));
+        }
         OutputFormat::Rss => {
             let rss = rss::offers_as_rss(offers).expect("Could not create rss feed");
             println!("{}", rss);
@@ -18,7 +18,7 @@ pub fn print_offers(offers: &[Offer], format: &OutputFormat) {
 }
 
 /// Print offers as a table
-fn print_as_table(offers: &[Offer]) {
+fn print_as_table(offers: &[&Offer]) {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)

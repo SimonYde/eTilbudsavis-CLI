@@ -1,25 +1,27 @@
 use crate::Offer;
 use std::fmt::Write;
 
-/// Create rss feed with list of offers
-pub fn offers_as_rss(offers: &[Offer]) -> Result<String, std::fmt::Error> {
+/// Create RSS feed with list of offers
+pub fn offers_as_rss(offers: &[&Offer]) -> Result<String, std::fmt::Error> {
     let mut output = String::new();
 
-    write!(output, "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n")?;
-    write!(output, "<rss version=\"2.0\">\n")?;
-    write!(output, "\t<channel>\n")?;
+    writeln!(output, r#"<?xml version="1.0" encoding="UTF-8" ?>"#)?;
+    writeln!(output, r#"<rss version="2.0">"#)?;
+    writeln!(output, "\t<channel>")?;
 
     for offer in offers {
-        write!(output, "\t<item>\n")?;
-        write!(
-            output, "\t\t<title>[{}] [{}] {}</title>\n", offer.dealer, offer.price, offer.name
+        writeln!(output, "\t<item>")?;
+        writeln!(
+            output,
+            "\t\t<title>[{}] [{}] {}</title>",
+            offer.dealer, offer.price, offer.name
         )?;
-        write!(output, "\t\t<pubDate>{}</pubDate>\n", offer.run_from.to_string())?;
-        write!(output, "\t</item>\n")?;
+        writeln!(output, "\t\t<pubDate>{}</pubDate>", offer.run_from)?;
+        writeln!(output, "\t</item>")?;
     }
 
-    write!(output, "\t</channel>\n")?;
+    writeln!(output, "\t</channel>")?;
     write!(output, "</rss>")?;
 
-    return Ok(output);
+    Ok(output)
 }

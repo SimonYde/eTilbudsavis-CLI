@@ -1,8 +1,7 @@
 # eTilbudsavis CLI
-## A command-line interface for the [etilbudsavis.com](https://www.etilbudsavis.com) website.
+## A command-line interface for the [etilbudsavis.dk](https://www.etilbudsavis.dk) website.
 
 Todo:
 - [x] tables
-- [ ] webserver
-- [ ] json to tables?
-- [ ] config files?
+- [x] json
+- [x] config files
