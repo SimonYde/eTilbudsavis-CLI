@@ -65,7 +65,15 @@ impl Dealer {
     pub(crate) fn list_known_dealers(format: Option<OutputFormat>) {
         let format = format.unwrap_or(OutputFormat::Table);
         match format {
-            OutputFormat::Json => todo!(),
+            OutputFormat::Json => {
+                let dealers: Vec<_> = Dealer::iter().collect();
+
+                println!(
+                    "{}",
+                    serde_json::to_string(&dealers)
+                        .unwrap_or("Failed to Serialize dealers".to_string())
+                );
+            }
             OutputFormat::Rss => (),
             OutputFormat::Table => {
                 let mut table = comfy_table::Table::new();
