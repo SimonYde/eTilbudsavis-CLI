@@ -1,11 +1,11 @@
 use anyhow::Context;
-use chrono::{DateTime, NaiveDate, Utc};
-use std::{collections::HashSet, str::FromStr};
+use chrono::prelude::*;
+use std::{collections::HashSet, process::exit, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
 use super::dealer::Dealer;
-use crate::Offer;
+use crate::{Offer, output::OutputFormat};
 use comfy_table::{Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
 use futures::future;
 
@@ -18,18 +18,34 @@ pub(crate) struct UserData {
 }
 
 impl UserData {
-    pub fn print_favorites(&self) -> &HashSet<Dealer> {
-        let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .apply_modifier(UTF8_ROUND_CORNERS)
-            .set_header(vec!["Favorites"]);
+    pub fn print_favorites(&self, format: Option<OutputFormat>) {
+        let format = format.unwrap_or(OutputFormat::Table);
 
-        for favorite in &self.favorites {
-            table.add_row(vec![favorite]);
+        match format {
+            OutputFormat::Rss => {
+                eprintln!("Unsupported output format for favorites");
+                exit(1);
+            }
+            OutputFormat::Json => {
+                println!(
+                    "{}",
+                    serde_json::to_string(&self.favorites)
+                        .unwrap_or("Failed to Serialize dealers".to_string())
+                );
+            }
+            OutputFormat::Table => {
+                let mut table = Table::new();
+                table
+                    .load_preset(UTF8_FULL)
+                    .apply_modifier(UTF8_ROUND_CORNERS)
+                    .set_header(vec!["Favorites"]);
+
+                for favorite in &self.favorites {
+                    table.add_row(vec![favorite]);
+                }
+                println!("{}", table);
+            }
         }
-        println!("{}", table);
-        &self.favorites
     }
 
     pub(crate) fn from_cache() -> Option<UserData> {

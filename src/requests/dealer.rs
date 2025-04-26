@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use futures::future;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use std::{process::exit, str::FromStr};
 use strum::{EnumIter, IntoEnumIterator};
 
 use super::{
@@ -44,6 +44,7 @@ pub enum Dealer {
 }
 
 impl Dealer {
+    #[inline(always)]
     fn id(&self) -> &'static str {
         match self {
             Dealer::Rema1000 => "11deC",
@@ -62,19 +63,25 @@ impl Dealer {
             Dealer::Unknown => "???",
         }
     }
+
     pub(crate) fn list_known_dealers(format: Option<OutputFormat>) {
         let format = format.unwrap_or(OutputFormat::Table);
+        let dealers: Vec<_> = Dealer::iter()
+            .filter(|&dealer| dealer != Dealer::Unknown)
+            .collect();
+
         match format {
             OutputFormat::Json => {
-                let dealers: Vec<_> = Dealer::iter().collect();
-
                 println!(
                     "{}",
                     serde_json::to_string(&dealers)
                         .unwrap_or("Failed to Serialize dealers".to_string())
                 );
             }
-            OutputFormat::Rss => (),
+            OutputFormat::Rss => {
+                eprintln!("Unsupported output format for dealers");
+                exit(1);
+            }
             OutputFormat::Table => {
                 let mut table = comfy_table::Table::new();
 
@@ -83,7 +90,7 @@ impl Dealer {
                     .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
                     .set_header(vec!["Dealers"]);
 
-                for dealer in Dealer::iter() {
+                for dealer in dealers {
                     table.add_row(vec![dealer.to_string()]);
                 }
 

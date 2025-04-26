@@ -2,7 +2,7 @@ use crate::Offer;
 use std::fmt::Write;
 
 /// Create RSS feed with list of offers
-pub fn offers_as_rss(offers: &[&Offer]) -> Result<String, std::fmt::Error> {
+pub fn offers_as_rss(offers: Vec<&Offer>) -> Result<String, std::fmt::Error> {
     let mut output = String::new();
 
     writeln!(output, r#"<?xml version="1.0" encoding="UTF-8" ?>"#)?;
