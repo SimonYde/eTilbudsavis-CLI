@@ -52,11 +52,19 @@
               cargoLock.lockFile = ./Cargo.lock;
               buildFeatures = features;
               buildInputs = [ openssl ];
-              nativeBuildInputs = [ pkg-config ];
+              nativeBuildInputs = with pkgs; [
+                pkg-config
+                makeWrapper
+              ];
+
               cargoBuildFlags = [
                 "-p"
                 cargoToml.package.name
               ];
+              postFixup = ''
+                wrapProgram $out/bin/etb \
+                  --prefix LD_LIBRARY_PATH : ${pkgs.openssl}/lib
+              '';
               meta = lib.attrsets.filterAttrs (k: v: v != null) {
                 inherit
                   homepage
