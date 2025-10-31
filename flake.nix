@@ -6,13 +6,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
 
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    pre-commit-hooks = {
-      url = "github:cachix/git-hooks.nix";
+    fenix = {
+      url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -20,52 +15,74 @@
   outputs =
     {
       self,
-      rust-overlay,
+      fenix,
       nixpkgs,
       flake-utils,
-      pre-commit-hooks,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs {
-          system = system;
-          overlays = [ rust-overlay.overlays.default ];
-        };
-        buildInputs = [
-          pkgs.rust-bin.stable.latest.default
-          pkgs.openssl
-        ];
+        pkgs = nixpkgs.legacyPackages."${system}";
+        rustBuildToolchain = fenix.packages.${system}.stable.minimalToolchain;
+        rustDevToolchain = fenix.packages.${system}.stable.toolchain;
+        rootCargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+        rootPackage = rootCargoToml.workspace.package or rootCargoToml.package or null;
+        longDescription =
+          if rootPackage ? readme then builtins.readFile (./. + ("/" + rootPackage.readme)) else null;
+        homepage = rootPackage.homePage or rootPackage.repository or null;
+        license = rootPackage.license or null;
+
+        rustPackage =
+          bin-dir: features:
+          with builtins;
+          let
+            cargoToml = fromTOML (readFile (bin-dir + "/Cargo.toml"));
+            pname = cargoToml.package.name;
+            inherit (cargoToml.package) version;
+            description = cargoToml.package.description or null;
+          in
+          with pkgs;
+          (makeRustPlatform {
+            cargo = rustBuildToolchain;
+            rustc = rustBuildToolchain;
+          }).buildRustPackage
+            {
+              inherit pname version;
+              src = lib.cleanSource ./.;
+              cargoLock.lockFile = ./Cargo.lock;
+              buildFeatures = features;
+              buildInputs = [ openssl ];
+              nativeBuildInputs = [ pkg-config ];
+              cargoBuildFlags = [
+                "-p"
+                cargoToml.package.name
+              ];
+              meta = lib.attrsets.filterAttrs (k: v: v != null) {
+                inherit
+                  homepage
+                  license
+                  description
+                  longDescription
+                  ;
+                mainProgram = "etb";
+              };
+            };
       in
       {
-        checks = {
-          pre-commit-check = pre-commit-hooks.lib.${system}.run {
-            src = ./.;
-            hooks = {
-              rustfmt.enable = true;
-            };
-          };
+        packages = {
+          etilbudsavis-cli = rustPackage ./. [ ];
+          default = self.packages.${system}.etilbudsavis-cli;
         };
 
         devShells.default = pkgs.mkShell {
-          inherit (self.checks.${system}.pre-commit-check) shellHook;
-          buildInputs = self.checks.${system}.pre-commit-check.enabledPackages;
+          inputsFrom = [ self.packages.${system}.default ];
 
-          packages = buildInputs ++ [ pkgs.pkg-config ];
-        };
-
-        packages = {
-          etilbudsavis-cli = pkgs.rustPlatform.buildRustPackage {
-            name = "etilbudsavis-cli";
-            src = ./.;
-            cargoLock.lockFile = ./Cargo.lock;
-
-            buildInputs = buildInputs;
-            nativeBuildInputs = [ pkgs.pkg-config ];
-            doCheck = true;
-          };
-
-          default = self.packages.${system}.etilbudsavis-cli;
+          packages = with pkgs; [
+            rust-analyzer
+            rustDevToolchain
+            cargo-audit
+            cargo-deny
+          ];
         };
       }
     );
