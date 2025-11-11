@@ -61,10 +61,12 @@
                 "-p"
                 cargoToml.package.name
               ];
+
               postFixup = ''
                 wrapProgram $out/bin/etb \
-                  --prefix LD_LIBRARY_PATH : ${pkgs.openssl}/lib
+                  --prefix LD_LIBRARY_PATH : ${pkgs.openssl.out}/lib
               '';
+
               meta = lib.attrsets.filterAttrs (k: v: v != null) {
                 inherit
                   homepage
